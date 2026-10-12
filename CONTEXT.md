@@ -39,7 +39,7 @@ A qualifying Round; each Heat has its own Reference.
 The last Round of a Competition, contested by Heat winners, with its own Reference.
 
 **Current Round**:
-The one Round the Host has put in front of the Audience; only one Round is current at a time.
+The one Round the Host has put in front of the Audience; at most one Round is current at a time. With none, the Stage shows the welcome screen (Competition name, Join code and QR).
 
 **Roster**:
 The Contestants taking part in a Round, as the Host and Audience see them. Contestants still looking at an earlier Round's work are not on the current Round's Roster.
