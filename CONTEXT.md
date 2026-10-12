@@ -63,8 +63,16 @@ The heightened visual state (particles, shake, colour shift) a Contestant enters
 ### The system
 
 **Core Editor**:
-The self-contained HTML file a Contestant opens and competes in; it works fully offline and never depends on anything else.
+The editor a Contestant competes in — the same for every Round; it works fully offline and never depends on anything else.
 _Avoid_: App, client
+
+**Round package**:
+The single self-contained file built for one Round — the Core Editor plus that Round's Reference, assets, instructions and connection details. It is what a Contestant opens.
+_Avoid_: Bundle, round file
+
+**Revision**:
+One export of a Round package. Re-exporting keeps the same Round but makes a new Revision.
+_Avoid_: Version, build
 
 **Enhancement**:
 Any capability layered on top of the Core Editor (preparation tooling, audience participation) whose absence or failure the Contestant never notices.
