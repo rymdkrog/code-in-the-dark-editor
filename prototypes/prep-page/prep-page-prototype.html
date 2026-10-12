@@ -159,6 +159,16 @@
   .vC .handout { background: #ffd84d; color: #1d1d1b; } .vC .handout b { color: #1d1d1b; }
   .vC .proto-banner { color: #1d1d1b; }
   .vC ul.check h4 { color: var(--dim); }
+  .vC .refbig img { cursor: crosshair; }
+  .vC .colours { display: grid; gap: 6px; }
+  .vC .crow { display: flex; gap: 8px; align-items: center; }
+  .vC .sw { width: 22px; height: 22px; border-radius: 5px; border: 1px solid #ffffff30; flex: none; }
+  .vC .sw.empty { border-style: dashed; }
+  .vC .crow input { background: #0003; border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 4px 7px; }
+  .vC .crow input.hex { width: 92px; } .vC .crow input.lbl { flex: 1; }
+  .vC .contestant .ih { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+  .vC .contestant .ci { display: flex; gap: 8px; align-items: center; margin: 2px 0; font-size: 12px; }
+  .vC .contestant .sw { width: 14px; height: 14px; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -196,7 +206,7 @@ function randFrom(alpha, n) { return [...crypto.getRandomValues(new Uint32Array(
 function token(bytes = 24) { return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(bytes)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function b64url(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function slugify(s) { return s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
-function mkRound(name, kind) { return { id: randFrom(ID_ALPHA, 10), name, kind, reference: null, assets: [], exports: [], dirty: true }; }
+function mkRound(name, kind) { return { id: randFrom(ID_ALPHA, 10), name, kind, reference: null, assets: [], colours: [], note: '', exports: [], dirty: true }; }
 
 const S = {
   comp: { name: 'Göteborg 2026', slug: 'gbg26', slugTouched: false, shake: true, rules: DEFAULT_RULES },
@@ -312,7 +322,9 @@ document.getElementById('out').innerHTML =
   '<dl><dt>Competition</dt><dd>' + e(d.competition.name) + '</dd><dt>Round id</dt><dd>' + e(d.round.id) + '</dd>' +
   '<dt>Revision</dt><dd>' + e(d.round.revision) + '</dd><dt>Shake</dt><dd>' + (d.competition.shake ? 'on' : 'off') + '</dd>' +
   '<dt>Connection</dt><dd>' + (d.connection ? e(d.connection.workerUrl) + ' · join ' + e(d.connection.joinCode) + ' · token ' + e(d.connection.contestantToken.slice(0,6)) + '…' : 'none (pure offline)') + '</dd></dl>' +
-  '<h2>Instructions</h2><pre>' + e(d.instructions.rules) + '\\n\\nAssets:\\n' +
+  '<h2>Instructions</h2><pre>' + e(d.instructions.rules) + (d.instructions.note ? '\\n\\n' + e(d.instructions.note) : '') + '</pre>' +
+  (d.instructions.colours.length ? '<h3>Colours</h3>' + d.instructions.colours.map(c => '<div><span style="display:inline-block;width:18px;height:18px;vertical-align:middle;border:1px solid #555;background:' + e(c.hex) + '"></span> <code>' + e(c.hex) + '</code> ' + e(c.label) + '</div>').join('') : '') +
+  '<pre>Assets:\\n' +
   d.instructions.assets.map(a => '  ' + a.name + (a.w ? '  ' + a.w + '×' + a.h : '')).join('\\n') + '</pre>' +
   '<h2>Reference</h2><img src="' + d.reference.dataUrl + '">' +
   '<h2>Assets</h2><div class="assets">' + d.assets.map(a => '<figure><img src="' + a.dataUrl + '"><figcaption>' + e(a.name) + '</figcaption></figure>').join('') + '</div>';
@@ -327,7 +339,7 @@ function packageData(r, rev) {
     v: 1,
     competition: { name: S.comp.name, shake: S.comp.shake },
     round: { id: r.id, name: r.name, revision: rev.stamp },
-    instructions: { rules: S.comp.rules, assets: r.assets.map(a => ({ name: a.name, w: a.w, h: a.h })) },
+    instructions: { rules: S.comp.rules, note: r.note.trim(), colours: r.colours.map(c => ({ hex: c.hex, label: c.label.trim() })), assets: r.assets.map(a => ({ name: a.name, w: a.w, h: a.h })) },
     reference: { name: r.reference.name, w: r.reference.w, h: r.reference.h, dataUrl: r.reference.dataUrl },
     assets: r.assets.map(a => ({ name: a.name, dataUrl: a.dataUrl })),
     connection: online() ? { workerUrl: S.audience.workerUrl, joinCode: S.audience.joinCode, contestantToken: S.audience.contestantToken } : null,
@@ -406,7 +418,9 @@ function assetTable(r, opts = {}) {
     <td class="x"><button class="linkbtn danger" data-act="rm-asset" data-round="${r.id}" data-i="${i}" title="Remove">✕</button></td></tr>`).join('')}</table>`;
 }
 function instructionsText(r) {
-  return S.comp.rules + '\n\nAssets:\n' + (r.assets.length ? r.assets.map(a => `  ${a.name.padEnd(22)} ${a.w ? a.w + '×' + a.h : ''}`).join('\n') : '  (none)');
+  return S.comp.rules + (r.note.trim() ? '\n\n' + r.note.trim() : '')
+    + (r.colours.length ? '\n\nColours:\n' + r.colours.map(c => `  ${c.hex}  ${c.label}`).join('\n') : '')
+    + '\n\nAssets:\n' + (r.assets.length ? r.assets.map(a => `  ${a.name.padEnd(22)} ${a.w ? a.w + '×' + a.h : ''}`).join('\n') : '  (none)');
 }
 function credentialRows() {
   const A = S.audience;
@@ -454,7 +468,7 @@ const CHECKLIST = [
 function checklist() {
   return `<ul class="check">${CHECKLIST.map(([g, items]) => `<h4>${g}</h4>` + items.map(t => `<li><label><input type="checkbox"> <span>${h(t)}</span></label></li>`).join('')).join('')}</ul>`;
 }
-const BANNER = `<div class="proto-banner"><b>Prototype question:</b> nothing here survives a reload — including the Round ids (autosave keys) and the Host secret (the claim). Should the real page autosave the Competition in the browser, or rely on <b>Save / Open Competition file</b>?</div>`;
+const BANNER = `<div class="proto-banner"><b>Decided, not prototyped:</b> the real page autosaves <i>one</i> Competition in the browser (Round ids and Host secret included) <i>and</i> exports/opens a Competition file. Opening or starting another offers to export the current one first. This prototype still forgets everything on reload.</div>`;
 const saveOpen = () => `<button class="btn" data-act="save">Save Competition file</button> <button class="btn" data-act="open">Open…</button>`;
 
 // ============================================================================
@@ -544,6 +558,45 @@ function VariantB() {
   return `<div class="vB"><div class="steps">${stepper}</div><main>${step === 0 ? BANNER : ''}${body}</main><div class="navbar">${nav}</div></div>`;
 }
 
+const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
+function normHex(v) {
+  const m = HEX.exec(v.trim()); if (!m) return null;
+  let x = m[1]; if (x.length === 3) x = [...x].map(c => c + c).join('');
+  return '#' + x.toUpperCase();
+}
+function addColour(r, hex, label = '') {
+  const n = normHex(hex);
+  if (!n) return notice('error', `“${hex}” isn't a hex colour (#RGB or #RRGGBB).`);
+  if (r.colours.some(c => c.hex === n)) return notice('info', `${n} is already in ${r.name}'s colours.`);
+  r.colours.push({ hex: n, label }); r.dirty = true; render();
+  setTimeout(() => document.getElementById(`c-clabel-${r.id}-${r.colours.length - 1}`)?.focus(), 0);
+}
+let pickCanvas = null;
+function pixelAt(img, e) {
+  const rect = img.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left) * img.naturalWidth / rect.width), y = Math.floor((e.clientY - rect.top) * img.naturalHeight / rect.height);
+  if (!pickCanvas || pickCanvas.src !== img.src) {
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0); pickCanvas = { src: img.src, ctx: c.getContext('2d') };
+  }
+  const [R_, G, B] = pickCanvas.ctx.getImageData(x, y, 1, 1).data;
+  return '#' + [R_, G, B].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+function colourEditor(r) {
+  return `<div class="colours">${r.colours.map((c, i) => `<div class="crow">
+      <span class="sw" style="background:${c.hex}"></span>
+      <input class="mono hex" id="c-chex-${r.id}-${i}" data-cbind="hex" data-round="${r.id}" data-i="${i}" value="${h(c.hex)}" spellcheck="false">
+      <input class="lbl" id="c-clabel-${r.id}-${i}" data-cbind="label" data-round="${r.id}" data-i="${i}" value="${h(c.label)}" placeholder="label, e.g. header">
+      <button class="linkbtn danger" data-act="rm-colour" data-round="${r.id}" data-i="${i}" title="Remove">✕</button></div>`).join('')}
+    <div class="crow"><span class="sw empty"></span><input class="mono hex" id="c-newhex-${r.id}" data-newhex="${r.id}" placeholder="+ hex" spellcheck="false">
+      <span class="muted" style="font-size:12px">Enter to add${r.reference ? ', or click the Reference to pick' : ''}</span></div></div>`;
+}
+function contestantInstructions(r) {
+  return `<pre>${h(S.comp.rules)}${r.note.trim() ? '\n\n' + h(r.note.trim()) : ''}</pre>
+    ${r.colours.length ? `<div><div class="ih">Colours</div>${r.colours.map(c => `<div class="ci"><span class="sw" style="background:${c.hex}"></span><code>${c.hex}</code> <span>${h(c.label)}</span></div>`).join('')}</div>` : ''}
+    <div><div class="ih">Assets</div>${r.assets.length ? r.assets.map(a => `<div class="ci"><code>${h(a.name)}</code> <span class="muted">${dims(a)}</span></div>`).join('') : '<span class="muted">(none)</span>'}</div>`;
+}
+
 // ============================================================================
 // Variant C — Workbench
 // ============================================================================
@@ -573,13 +626,15 @@ function VariantC() {
         <span class="file">${fileName(r)} · ≈ ${fmtBytes(pkgBytes(r))}</span> ${chip(st)}
         <button class="go" data-act="export" data-round="${r.id}" ${st.ready ? '' : 'disabled'}>${st.last ? 'Re-export as Rev ' + (st.last.n + 1) : 'Export Rev 1'}</button></div>
       <div class="work">
-        <div><h3>Reference</h3>${r.reference ? `<div class="refbig" data-drop="ref" data-round="${r.id}"><img src="${r.reference.dataUrl}" alt=""></div>
-          <div class="muted" style="font-size:12px;margin-top:6px">${h(r.reference.name)} · ${dims(r.reference)} · ${fmtBytes(r.reference.size)} · <button class="linkbtn" data-act="pick-ref" data-round="${r.id}">replace</button> · drop a new one onto it</div>`
+        <div><h3>Reference</h3>${r.reference ? `<div class="refbig" data-drop="ref" data-round="${r.id}"><img src="${r.reference.dataUrl}" alt="" data-eyedrop="${r.id}" title="Click to add this colour"></div>
+          <div class="muted" style="font-size:12px;margin-top:6px">${h(r.reference.name)} · ${dims(r.reference)} · ${fmtBytes(r.reference.size)} · <button class="linkbtn" data-act="pick-ref" data-round="${r.id}">replace</button> · drop a new one onto it · click it to pick a colour</div>`
           : `<div class="drop" data-drop="ref" data-round="${r.id}" style="padding:120px 20px">Drop the Reference screenshot<br><small>or click to choose</small></div>`}
           <div style="margin-top:12px;font-size:13px"><button class="linkbtn" data-act="dist" data-round="${r.id}">Import original dist/ folder…</button> · <button class="linkbtn danger" data-act="rm-round" data-round="${r.id}">Remove Round</button></div></div>
         <div style="display:grid;gap:18px">
           <div><h3>What the Contestant sees</h3><div class="contestant"><div class="bar"><span>${h(S.comp.name)}</span><span class="badge">Anna · ${h(r.name)}</span></div>
-            <div class="body"><pre>${h(instructionsText(r))}</pre></div></div></div>
+            <div class="body">${contestantInstructions(r)}</div></div></div>
+          <div><h3>Round note</h3><label class="field"><textarea id="c-note-${r.id}" data-rbind="note" data-round="${r.id}" style="min-height:60px" placeholder="Optional, shown under the rules. e.g. The nav doesn't need hover states.">${h(r.note)}</textarea></label></div>
+          <div><h3>Colours</h3>${colourEditor(r)}</div>
           <div><h3>Assets</h3>${assetTable(r, { thumbs: true })}<div style="margin-top:8px">${assetDrop(r)}</div></div>
           ${st.warnings.length ? `<div class="warn" style="font-size:13px;color:#ffb02e">${st.warnings.map(h).join('<br>')}</div>` : ''}
           ${r.exports.length ? `<div><h3>Revisions</h3><div class="muted" style="font-size:13px">${r.exports.slice().reverse().map(e => `Rev ${e.n} · ${fmtTime(e.at)} · <code>${e.stamp}</code>`).join('<br>')}</div>
@@ -649,6 +704,8 @@ document.addEventListener('click', e => {
   }
   const dis = e.target.closest('[data-dismiss]');
   if (dis) { const i = notices.findIndex(n => String(n.id) === dis.dataset.dismiss); if (i >= 0) notices.splice(i, 1); return renderToasts(); }
+  const eye = e.target.closest('[data-eyedrop]');
+  if (eye) return addColour(R(eye.dataset.eyedrop), pixelAt(eye, e));
   const el = e.target.closest('[data-act]');
   if (!el) {
     const d = e.target.closest('.drop[data-drop]');
@@ -662,6 +719,7 @@ document.addEventListener('click', e => {
     case 'open': return pick('open');
     case 'save': return saveCompetition();
     case 'rm-asset': r.assets.splice(+el.dataset.i, 1); r.dirty = true; break;
+    case 'rm-colour': r.colours.splice(+el.dataset.i, 1); r.dirty = true; break;
     case 'rm-round':
       if (S.rounds.length <= 1) return notice('error', 'A Competition needs at least one Round.');
       S.rounds = S.rounds.filter(x => x !== r); if (S.ui.sel === r.id) S.ui.sel = S.rounds[0].id;
@@ -694,6 +752,9 @@ document.addEventListener('input', e => {
     if (obj === 'comp' && key === 'slug') S.comp.slugTouched = true;
     if (obj === 'comp' && key === 'name' && !S.comp.slugTouched) S.comp.slug = slugify(t.value).slice(0, 12);
     touchAll(); // every Competition-level change lands in every package
+  } else if (t.dataset.cbind) {
+    if (t.dataset.cbind === 'hex') return; // committed on change, so typing isn't reformatted mid-word
+    const r = R(t.dataset.round); r.colours[+t.dataset.i].label = t.value; r.dirty = true;
   } else if (t.dataset.rbind) {
     const r = R(t.dataset.round); r[t.dataset.rbind] = t.value; r.dirty = true;
   } else return;
@@ -701,6 +762,16 @@ document.addEventListener('input', e => {
 });
 // slug: keep the raw text while typing, normalise on blur
 document.addEventListener('change', e => { if (e.target.dataset.bind === 'comp.slug') { S.comp.slug = slugify(S.comp.slug); render(); } });
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (e.key === 'Enter' && t.dataset.newhex) { e.preventDefault(); if (t.value.trim()) addColour(R(t.dataset.newhex), t.value); }
+});
+document.addEventListener('change', e => {
+  const t = e.target; if (t.dataset.cbind !== 'hex') return;
+  const r = R(t.dataset.round), c = r.colours[+t.dataset.i], n = normHex(t.value);
+  if (n) { c.hex = n; r.dirty = true; } else notice('error', `“${t.value}” isn't a hex colour; kept ${c.hex}.`);
+  render();
+});
 
 document.addEventListener('dragover', e => { const d = e.target.closest('[data-drop]'); if (!d) return; e.preventDefault(); document.querySelectorAll('.over').forEach(x => x.classList.remove('over')); d.classList.add('over'); });
 document.addEventListener('dragleave', e => { const d = e.target.closest('[data-drop]'); if (d && !d.contains(e.relatedTarget)) d.classList.remove('over'); });
@@ -755,6 +826,8 @@ async function seed() {
     await canvasFile('card-1.png', 340, 200, (g, w, h) => { g.fillStyle = '#7fc8a9'; g.fillRect(0, 0, w, h); }),
   ]);
   await setReference(h2, await canvasFile('heat2-reference.png', 1280, 1240, drawRef(20)));
+  h1.colours = [{ hex: '#1F3A4D', label: 'header, footer' }, { hex: '#43A5D9', label: 'hero' }, { hex: '#F2F4F5', label: 'page background' }];
+  h1.note = "The nav links don't need hover states.";
   h1.dirty = h2.dirty = true;
   render();
 }
