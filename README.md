@@ -3,7 +3,7 @@
 An alternative take on the [Code in the Dark editor](https://github.com/codeinthedark/editor): the same blind, power-mode, single-HTML-file experience, plus optional companions that make a competition easier to prepare and let the audience join in.
 
 > [!IMPORTANT]
-> **Running a competition? Use the original editor.** Nothing here is ready to use. The [original editor](https://github.com/codeinthedark/editor) is tried and tested.
+> **You should use the original editor.** Nothing here is ready. The [original editor](https://github.com/codeinthedark/editor) is tried and tested.
 
 ## Status
 
