@@ -14,6 +14,7 @@ Flip Host variants with ← / → and Stage variants with Shift+← / Shift+→,
 - **A — Giant clock:** the timer fills the screen, with a small join corner. Voting shows a big QR and the turnout. Results show the whole ranking at once.
 - **B — Join sidebar:** a permanent QR sidebar. Results are revealed **last-to-first**, with joint leaders arriving together.
 - **C — Name tiles:** the Roster as tiles, with a draining time bar. Results grow as columns **in Roster order** (not sorted), and the leader is crowned.
+- **D — Combined** (after first feedback): C's tiles, A's giant clock while running, and the **Reference** beside the turnout while voting.
 
 Real: the lifecycle rules (upcoming → running → time's up → voting → results, reopen, re-run clears votes), the tally with ties, the stale-Revision flag, hand-added and removed entries, the claim screen, timers from an absolute `endsAt` (so they keep running while the Host or Stage is disconnected), and real QR codes (qrcode-generator, MIT, inlined).
 Fake: the Durable Object, the sockets, the laptops and the phones. All of them are in memory and driven by the simulator. A reload resets to the seeded mid-event state.

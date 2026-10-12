@@ -15,6 +15,7 @@
   Stage A — Giant clock   (timer dominates; small join corner; ranking shown all at once)
   Stage B — Join sidebar  (permanent QR sidebar; ranking revealed last-to-first)
   Stage C — Name tiles    (Roster as tiles, draining time bar; results as columns in seat order)
+  Stage D — Combined      (after feedback: C's tiles, A's giant clock while running, the Reference while voting)
   Real: the lifecycle rules from the session-model and voting decisions, tally/ties, stale-Revision flag,
         timer from an absolute endsAt (survives a Host or Stage disconnect), QR codes (inlined qrcode-generator, MIT).
   Fake: the Durable Object, WebSockets, laptops and phones — all in-memory, driven by the venue simulator.
@@ -249,6 +250,16 @@
   .stC-foot { position: absolute; left: 0; right: 0; bottom: 0; height: 170px; background: #111118; border-top: 3px solid #ffffff14; display: flex; align-items: center; justify-content: center; gap: 40px; font-size: 44px; }
   .stC-foot b { color: #3ee6ff; letter-spacing: .14em; font-size: 64px; }
   .stC-foot .qr { width: 140px; height: 140px; }
+
+  /* Stage D — Combined: the Reference while voting */
+  .stD-vote { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 520px; }
+  .stD-ref { padding: 60px 40px 60px 70px; display: flex; flex-direction: column; gap: 22px; min-height: 0; }
+  .stD-ref .kicker { display: flex; justify-content: space-between; }
+  .stD-ref .kicker span { color: #8a8a96; letter-spacing: .1em; }
+  .stD-ref img { flex: 1; min-height: 0; width: 100%; object-fit: contain; object-position: left top; border-radius: 12px; outline: 3px solid #ffffff22; }
+  .stD-side { background: #111118; border-left: 4px solid #ff3e8a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; text-align: center; padding: 40px; }
+  .stD-side .t { font: 800 50px system-ui; } .stD-side .count { font-size: 230px; font-weight: 800; line-height: .9; }
+  .stD-side .sub { font: 40px system-ui; color: #b7b7c2; } .stD-side .code { font-size: 70px; font-weight: 800; letter-spacing: .14em; color: #3ee6ff; }
 </style>
 </head>
 <body>
@@ -2564,7 +2575,7 @@ var qrcode = function() {
 // ======================================================================
 const params = new URLSearchParams(location.search);
 const HOSTS = [{ k: 'A', name: 'Control desk' }, { k: 'B', name: 'Remote (phone)' }, { k: 'C', name: 'Rounds board' }];
-const STAGES = [{ k: 'A', name: 'Giant clock' }, { k: 'B', name: 'Join sidebar' }, { k: 'C', name: 'Name tiles' }];
+const STAGES = [{ k: 'A', name: 'Giant clock' }, { k: 'B', name: 'Join sidebar' }, { k: 'C', name: 'Name tiles' }, { k: 'D', name: 'Combined (tiles + clock + Reference)' }];
 let hostV = HOSTS.some(h => h.k === params.get('host')) ? params.get('host') : 'A';
 let stageV = STAGES.some(s => s.k === params.get('stage')) ? params.get('stage') : 'A';
 let view = ['split', 'host', 'stage'].includes(params.get('view')) ? params.get('view') : 'split';
@@ -3000,7 +3011,39 @@ function stageC(X) {
 // ======================================================================
 // Render
 // ======================================================================
-const HOSTR = { A: hostA, B: hostB, C: hostC }, STAGER = { A: stageA, B: stageB, C: stageC };
+// Stage D — Combined (after the first round of feedback): tiles everywhere, the giant clock while running,
+// and the Reference beside the turnout while voting, so the Audience compares the Reveals with the target.
+const refCache = {};
+function fakeReference(r) {  // stand-in for the Round's Reference screenshot
+  if (refCache[r.id]) return refCache[r.id];
+  const hue = [...r.id].reduce((a, c) => a + c.charCodeAt(0), 0) * 47 % 360, c1 = `hsl(${hue} 55% 22%)`, c2 = `hsl(${(hue + 40) % 360} 85% 62%)`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+    <rect width="1440" height="900" fill="#f6f3ee"/><rect width="1440" height="90" fill="${c1}"/>
+    <text x="70" y="58" font-family="Georgia" font-size="34" fill="#fff" font-weight="bold">Nordlys Coffee</text>
+    ${['Menu', 'Visit', 'About'].map((t, i) => `<text x="${1060 + i * 120}" y="56" font-family="Helvetica" font-size="22" fill="#fff">${t}</text>`).join('')}
+    <rect y="90" width="1440" height="420" fill="${c2}"/><text x="70" y="270" font-family="Georgia" font-size="78" fill="${c1}" font-weight="bold">Brewed in the dark.</text>
+    <text x="72" y="330" font-family="Helvetica" font-size="28" fill="${c1}">Small-batch roasts from the far north, since 2011.</text>
+    <rect x="72" y="380" width="230" height="64" rx="32" fill="${c1}"/><text x="118" y="422" font-family="Helvetica" font-size="24" fill="#fff" font-weight="bold">Order now</text>
+    <circle cx="1120" cy="300" r="150" fill="${c1}" opacity=".9"/><circle cx="1120" cy="300" r="90" fill="#f6f3ee" opacity=".25"/>
+    ${[0, 1, 2].map(i => `<rect x="${70 + i * 446}" y="570" width="406" height="260" rx="14" fill="#fff" stroke="#0001"/><rect x="${100 + i * 446}" y="600" width="80" height="80" rx="40" fill="${c2}"/>
+      <text x="${100 + i * 446}" y="730" font-family="Georgia" font-size="30" fill="${c1}" font-weight="bold">${['Roast', 'Brew', 'Taste'][i]}</text>
+      <rect x="${100 + i * 446}" y="755" width="300" height="12" rx="6" fill="#0002"/><rect x="${100 + i * 446}" y="780" width="220" height="12" rx="6" fill="#0002"/>`).join('')}
+  </svg>`;
+  return refCache[r.id] = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+function stageD(X) {
+  if (!X.claimed) return stageWaiting(X);
+  if (X.phase === 'running') return stageA(X);
+  if (X.phase !== 'voting') return stageC(X);
+  const r = roundOf(X), t = tally(X);
+  return `<div class="st stD"><div class="stD-vote">
+    <div class="stD-ref"><div class="kicker">Reference · ${esc(r.name)}<span>which Reveal came closest?</span></div><img src="${fakeReference(r)}" alt=""></div>
+    <aside class="stD-side"><div class="t">Vote now</div><div class="count">${t.total}</div><div class="sub">vote${t.total === 1 ? '' : 's'} so far</div>
+      ${qrSvg(joinUrl(X), 300)}<div class="code">${X.comp.joinCode}</div><div class="sub" style="font-size:28px">${X.comp.url}</div></aside>
+  </div>${stageOffline()}</div>`;
+}
+
+const HOSTR = { A: hostA, B: hostB, C: hostC }, STAGER = { A: stageA, B: stageB, C: stageC, D: stageD };
 let stageWin = null;
 function setHTML(el, html) {
   if (!el || el._html === html) return;
