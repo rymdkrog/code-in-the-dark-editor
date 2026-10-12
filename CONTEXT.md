@@ -38,6 +38,13 @@ A qualifying Round; each Heat has its own Reference.
 **Final**:
 The last Round of a Competition, contested by Heat winners, with its own Reference.
 
+**Current Round**:
+The one Round the Host has put in front of the Audience; only one Round is current at a time.
+
+**Roster**:
+The Contestants taking part in a Round, as the Host and Audience see them. Contestants still looking at an earlier Round's work are not on the current Round's Roster.
+_Avoid_: Lineup, participants
+
 **Reference**:
 The screenshot of the target page Contestants must recreate.
 _Avoid_: Target, page.png, design
@@ -66,3 +73,7 @@ _Avoid_: Plugin, add-on, online mode
 **Stage**:
 The separate screen at the venue showing shared Competition state — the timer, voting — rather than any one Contestant's editor.
 _Avoid_: Projector view, dashboard, scoreboard
+
+**Join code**:
+The short public code the Audience uses to join a Competition; one code covers every Round of the Competition.
+_Avoid_: Session code, PIN, room
