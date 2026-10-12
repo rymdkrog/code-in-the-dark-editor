@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Organizer prep page</title>
+<!--
+  PROTOTYPE — throwaway. Wayfinder ticket: "What does the Organizer prep page look like?" (#11)
+  Three structurally different variants of the prep page, switchable via ?variant=A|B|C
+  and the floating bar at the bottom (← / → also cycle):
+    A — Single page   (one scrolling document: Competition → Rounds → Audience → Hand out)
+    B — Wizard        (four steps, one at a time, ending in an export + checklist screen)
+    C — Workbench     (sidebar of Rounds with status; one Round at a time beside what the Contestant will see)
+  Real: image dimensions, name validation, 32 MB warning, credential minting, stub Round package download.
+  Fake: the Core Editor template (the download is a stub that only shows what got baked in).
+  No persistence: state is in memory, on purpose. A reload forgets everything (see the banner).
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: #f4f3ef; color: #1d1d1b; padding-bottom: 90px; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+  .muted { color: #77756f; }
+  .warn { color: #a35a00; }
+  .err { color: #b3261e; }
+  .ok { color: #2a7a3b; }
+  img.thumb { display: block; max-width: 100%; height: auto; border: 1px solid #0002; background: repeating-conic-gradient(#0000000d 0 25%, transparent 0 50%) 0 0/12px 12px; }
+
+  /* ---------- prototype chrome (not part of the design) ---------- */
+  #switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 4px;
+    background: #ff2d87; color: #fff; border-radius: 999px; padding: 6px; box-shadow: 0 6px 24px #0005; font: 600 14px system-ui; }
+  #switcher button { background: #fff2; border: 0; color: #fff; border-radius: 999px; padding: 6px 12px; }
+  #switcher button:hover { background: #fff4; }
+  #switcher .label { padding: 0 10px; min-width: 190px; text-align: center; }
+  #statepanel { position: fixed; right: 12px; top: 12px; bottom: 80px; width: min(440px, 45vw); z-index: 99; background: #111d; color: #b5f5c8;
+    border-radius: 10px; padding: 12px; overflow: auto; font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; display: none; }
+  #statepanel.open { display: block; }
+  #toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 70px; z-index: 101; display: grid; gap: 6px; width: min(560px, 92vw); }
+  .toast { padding: 9px 12px 9px 14px; border-radius: 8px; background: #222; color: #fff; display: flex; gap: 10px; align-items: start; box-shadow: 0 4px 16px #0004; font-size: 14px; }
+  .toast.error { background: #8c1d18; } .toast.warn { background: #7a4600; } .toast.info { background: #234; }
+  .toast button { margin-left: auto; background: none; border: 0; color: #fff; opacity: .7; }
+  .proto-banner { background: #fff3c4; border: 1px dashed #c9a400; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+
+  /* ---------- shared bits ---------- */
+  .drop { border: 2px dashed #0003; border-radius: 10px; padding: 14px; text-align: center; color: #77756f; background: #fff8; cursor: pointer; }
+  .drop.over { border-color: #ff2d87; background: #ff2d8712; color: #ff2d87; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #0000000f; white-space: nowrap; }
+  .chip.ok { background: #d8f0dc; color: #1f5f2c; } .chip.warn { background: #ffe7c2; color: #7a4600; } .chip.err { background: #fadbd8; color: #8c1d18; } .chip.new { background: #e2e6ff; color: #2b3a99; }
+  table.assets { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.assets td { padding: 3px 6px; border-top: 1px solid #0000000f; vertical-align: middle; }
+  table.assets td.x { width: 1%; text-align: right; }
+  .linkbtn { background: none; border: 0; padding: 0; color: #2b5bd7; text-decoration: underline; font-size: 13px; }
+  .linkbtn.danger { color: #b3261e; }
+  .btn { border: 1px solid #0003; background: #fff; border-radius: 8px; padding: 6px 12px; }
+  .btn.primary { background: #1d1d1b; color: #fff; border-color: #1d1d1b; }
+  .btn.big { padding: 12px 20px; font-size: 17px; font-weight: 600; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  label.field { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+  label.field input, label.field textarea { font-weight: 400; font-size: 15px; padding: 7px 9px; border: 1px solid #0003; border-radius: 7px; background: #fff; }
+  label.field textarea { font-family: ui-monospace, Menlo, monospace; font-size: 13px; min-height: 130px; }
+  .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 14px; }
+  .secret { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: #0000000a; padding: 2px 6px; border-radius: 5px; word-break: break-all; }
+  ul.check { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+  ul.check li label { display: flex; gap: 8px; align-items: start; }
+  ul.check h4 { margin: 10px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #77756f; }
+  .handout { background: #1d1d1b; color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 15px; }
+  .handout b { color: #ffd84d; }
+
+  /* ---------- A: single page ---------- */
+  .vA { max-width: 900px; margin: 0 auto; padding: 24px 20px; display: grid; gap: 22px; }
+  .vA header { display: flex; align-items: center; gap: 12px; }
+  .vA header h1 { margin: 0; font-size: 26px; flex: 1; }
+  .vA section { background: #fff; border-radius: 14px; padding: 18px 20px; box-shadow: 0 1px 3px #0001; display: grid; gap: 14px; }
+  .vA section h2 { margin: 0; font-size: 19px; }
+  .vA section h2 small { font-weight: 400; color: #77756f; font-size: 14px; }
+  .vA .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .vA .round { border: 1px solid #0000001a; border-radius: 12px; padding: 14px; display: grid; gap: 12px; }
+  .vA .round-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .vA .round-head input { font-size: 17px; font-weight: 700; border: 0; border-bottom: 1px dashed #0003; padding: 2px 0; width: 160px; background: none; }
+  .vA .round-body { display: grid; grid-template-columns: 220px 1fr; gap: 14px; }
+  .vA .round-foot { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .vA .round-foot .btn { margin-left: auto; }
+  .vA table.files { width: 100%; border-collapse: collapse; }
+  .vA table.files td, .vA table.files th { text-align: left; padding: 6px 8px; border-top: 1px solid #0000000f; font-size: 14px; }
+
+  /* ---------- B: wizard ---------- */
+  .vB { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+  .vB .steps { display: flex; justify-content: center; gap: 0; padding: 22px 16px 10px; background: #fff; border-bottom: 1px solid #0001; }
+  .vB .step { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border: 0; background: none; color: #77756f; font-weight: 600; }
+  .vB .step .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #0000000f; }
+  .vB .step.on { color: #1d1d1b; } .vB .step.on .n { background: #1d1d1b; color: #fff; }
+  .vB .step.done .n { background: #2a7a3b; color: #fff; }
+  .vB .step + .step::before { content: ""; width: 34px; height: 2px; background: #0002; margin-right: 8px; }
+  .vB main { width: min(980px, 100%); margin: 0 auto; padding: 28px 20px; display: grid; gap: 18px; align-content: start; }
+  .vB main h2 { margin: 0; font-size: 28px; }
+  .vB main .lede { margin: -10px 0 0; color: #77756f; font-size: 16px; }
+  .vB .navbar { position: sticky; bottom: 0; background: #fffe; border-top: 1px solid #0001; padding: 12px 20px 70px; display: flex; justify-content: center; gap: 10px; }
+  .vB table.rounds { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+  .vB table.rounds td { background: #fff; padding: 10px; vertical-align: top; }
+  .vB table.rounds td:first-child { border-radius: 10px 0 0 10px; width: 150px; } .vB table.rounds td:last-child { border-radius: 0 10px 10px 0; width: 1%; }
+  .vB table.rounds th { text-align: left; font-size: 12px; text-transform: uppercase; color: #77756f; padding: 0 10px; }
+  .vB table.rounds input { font-weight: 700; border: 0; border-bottom: 1px dashed #0003; width: 120px; background: none; }
+  .vB .refcell { width: 150px; } .vB .refcell .drop { padding: 18px 6px; font-size: 13px; }
+  .vB .assetcell .drop { padding: 8px; font-size: 13px; margin-top: 6px; }
+  .vB .assetchips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .vB .card { background: #fff; border-radius: 14px; padding: 18px 20px; display: grid; gap: 14px; box-shadow: 0 1px 3px #0001; }
+  .vB .review { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .vB .review .card { gap: 8px; }
+  .vB .review h3 { margin: 0; display: flex; gap: 8px; align-items: center; }
+  .vB .done { text-align: center; display: grid; gap: 14px; justify-items: center; }
+  .vB .done .big-ok { font-size: 46px; }
+
+  /* ---------- C: workbench ---------- */
+  .vC { --bg: #15161a; --panel: #1d1f25; --line: #ffffff14; --text: #e6e4dd; --dim: #8d8b85; --pink: #ff2d87;
+    background: var(--bg); color: var(--text); min-height: 100vh; display: grid; grid-template-columns: 270px 1fr; }
+  body:has(.vC) { background: #15161a; }
+  .vC .muted { color: var(--dim); }
+  .vC aside { background: var(--panel); border-right: 1px solid var(--line); padding: 16px 10px 90px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+  .vC aside .brand { padding: 4px 10px 14px; }
+  .vC aside .brand input { background: none; border: 0; color: var(--text); font-size: 18px; font-weight: 700; width: 100%; padding: 0; }
+  .vC aside .group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); padding: 14px 10px 4px; }
+  .vC .nav { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; background: none; border: 0; border-radius: 8px; padding: 8px 10px; color: var(--text); }
+  .vC .nav:hover { background: #ffffff0a; } .vC .nav.on { background: #ff2d8722; box-shadow: inset 3px 0 var(--pink); }
+  .vC .nav .sub { grid-column: 1 / -1; font-size: 12px; color: var(--dim); }
+  .vC .dot { width: 9px; height: 9px; border-radius: 50%; align-self: center; }
+  .vC .dot.ok { background: #3ecf6a; } .vC .dot.warn { background: #ffb02e; } .vC .dot.err { background: #ff5a4f; } .vC .dot.new { background: #7b8cff; }
+  .vC aside .spacer { flex: 1; }
+  .vC .addrow { display: flex; gap: 6px; padding: 6px 10px; }
+  .vC .addrow button { flex: 1; background: none; border: 1px dashed var(--line); color: var(--dim); border-radius: 8px; padding: 5px; }
+  .vC .exportall { margin: 10px; background: var(--pink); color: #fff; border: 0; border-radius: 10px; padding: 11px; font-weight: 700; }
+  .vC .exportall:disabled { opacity: .35; }
+  .vC main { padding: 0 0 90px; min-width: 0; }
+  .vC .topbar { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: #15161af0; backdrop-filter: blur(6px); z-index: 2; flex-wrap: wrap; }
+  .vC .topbar input.rname { background: none; border: 0; color: var(--text); font-size: 22px; font-weight: 800; width: 170px; }
+  .vC .topbar .file { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--dim); }
+  .vC .topbar .go { margin-left: auto; background: var(--pink); color: #fff; border: 0; border-radius: 9px; padding: 9px 16px; font-weight: 700; }
+  .vC .topbar .go:disabled { opacity: .35; }
+  .vC .work { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); gap: 24px; padding: 20px 24px; align-items: start; }
+  .vC .work h3, .vC .pane h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  .vC .drop { border-color: #ffffff2a; background: #ffffff06; color: var(--dim); }
+  .vC .drop.over { border-color: var(--pink); color: var(--pink); }
+  .vC .refbig { max-height: 72vh; overflow: auto; border-radius: 8px; border: 1px solid var(--line); }
+  .vC .refbig img { display: block; width: 100%; }
+  .vC .contestant { background: #000; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 13px; }
+  .vC .contestant .bar { display: flex; justify-content: space-between; padding: 6px 10px; background: #111; color: #888; font-size: 12px; }
+  .vC .contestant .badge { color: #e6e4dd; background: #333; border-radius: 999px; padding: 1px 8px; }
+  .vC .contestant .body { padding: 12px 14px; display: grid; gap: 10px; color: #cfcfcf; }
+  .vC .contestant pre { margin: 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; color: #9fe2a0; }
+  .vC table.assets td { border-top-color: var(--line); }
+  .vC .pane { padding: 22px 24px; display: grid; gap: 18px; max-width: 860px; }
+  .vC .pane h2 { margin: 0; font-size: 22px; }
+  .vC label.field input, .vC label.field textarea { background: #0003; border-color: var(--line); color: var(--text); }
+  .vC .secret { background: #ffffff10; }
+  .vC .btn { background: #ffffff0d; border-color: var(--line); color: var(--text); }
+  .vC .linkbtn { color: #8fb0ff; }
+  .vC .linkbtn.danger { color: #ff8a80; }
+  .vC .chip { background: #ffffff14; } .vC .chip.new { background: #2b3a99; color: #dfe4ff; }
+  .vC .handout { background: #ffd84d; color: #1d1d1b; } .vC .handout b { color: #1d1d1b; }
+  .vC .proto-banner { color: #1d1d1b; }
+  .vC ul.check h4 { color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toasts"></div>
+<pre id="statepanel"></pre>
+<div id="switcher">
+  <button data-sw="prev" title="Previous variant (←)">←</button>
+  <span class="label" id="swlabel"></span>
+  <button data-sw="next" title="Next variant (→)">→</button>
+  <button data-sw="state" title="Show the full prototype state">state</button>
+</div>
+<input type="file" id="picker" hidden>
+
+<script>
+// ============================================================================
+// State (in memory only — on purpose)
+// ============================================================================
+const NAME_ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I/L
+const ID_ALPHA = 'abcdefghijkmnpqrstuvwxyz23456789';
+const MB = 1024 * 1024;
+const DATA_URL_CAP = 32 * MB;   // Firefox < 136 / ESR 128 cap per data: URL
+const EDITOR_BYTES = 560 * 1024; // ACE (~545 KB) + Core Editor, inlined
+const OK_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+const DEFAULT_RULES = [
+  'Recreate the Reference using only HTML and CSS.',
+  'You will not see your result until the Reveal at the end of the Round.',
+  'No previews, no developer tools, no measuring, no looking things up.',
+  'Use only the assets listed below.',
+  'When time is up, stop typing and wait for the Host.',
+].join('\n');
+
+function randFrom(alpha, n) { return [...crypto.getRandomValues(new Uint32Array(n))].map(x => alpha[x % alpha.length]).join(''); }
+function token(bytes = 24) { return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(bytes)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64url(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function slugify(s) { return s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+function mkRound(name, kind) { return { id: randFrom(ID_ALPHA, 10), name, kind, reference: null, assets: [], exports: [], dirty: true }; }
+
+const S = {
+  comp: { name: 'Göteborg 2026', slug: 'gbg26', slugTouched: false, shake: true, rules: DEFAULT_RULES },
+  audience: { enabled: true, workerUrl: 'https://citd.example.workers.dev', joinCode: randFrom(NAME_ALPHA, 6), contestantToken: token(), hostSecret: token() },
+  rounds: [mkRound('Heat 1', 'heat'), mkRound('Heat 2', 'heat'), mkRound('Heat 3', 'heat'), mkRound('Heat 4', 'heat'), mkRound('Final', 'final')],
+  ui: { sel: null, step: 0, exportedAll: false },
+};
+S.ui.sel = S.rounds[0].id;
+const notices = [];
+
+// ============================================================================
+// Helpers: rounds, status, files
+// ============================================================================
+const R = id => S.rounds.find(r => r.id === id);
+const touchAll = () => S.rounds.forEach(r => r.dirty = true);
+const fileName = r => `citd-${S.comp.slug || 'competition'}-${slugify(r.name) || 'round'}.html`;
+const fmtBytes = n => n >= MB ? (n / MB).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+const fmtTime = iso => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const workerOrigin = () => { try { return new URL(S.audience.workerUrl).origin; } catch { return null; } };
+const online = () => S.audience.enabled && !!workerOrigin();
+
+function pkgBytes(r) {
+  return EDITOR_BYTES + S.comp.rules.length + (r.reference?.dataUrl.length || 0) + r.assets.reduce((n, a) => n + a.dataUrl.length, 0);
+}
+function status(r) {
+  const problems = [];
+  if (!r.name.trim()) problems.push('No name');
+  if (!r.reference) problems.push('No Reference');
+  const dupName = S.rounds.some(o => o !== r && fileName(o) === fileName(r));
+  if (dupName) problems.push('Same file name as another Round');
+  const warnings = [];
+  if (S.audience.enabled && !workerOrigin()) warnings.push('Audience on but no valid Worker URL: this package will be offline');
+  for (const a of [r.reference, ...r.assets].filter(Boolean)) if (a.size > DATA_URL_CAP) warnings.push(`${a.name} is over 32 MB; Firefox ESR can't show it in the Reveal`);
+  if (!r.assets.length && r.reference) warnings.push('No assets (fine if the Reference needs none)');
+  const last = r.exports.at(-1) || null;
+  let state;
+  if (problems.length) state = { cls: 'err', text: problems[0] };
+  else if (!last) state = { cls: 'new', text: 'Not exported' };
+  else if (r.dirty) state = { cls: 'warn', text: `Changed since Rev ${last.n}` };
+  else state = { cls: 'ok', text: `Rev ${last.n} exported` };
+  return { problems, warnings, last, state, ready: !problems.length };
+}
+
+function notice(kind, text) {
+  const n = { id: Math.random(), kind, text };
+  notices.push(n);
+  setTimeout(() => { const i = notices.indexOf(n); if (i >= 0) { notices.splice(i, 1); renderToasts(); } }, kind === 'info' ? 5000 : 10000);
+  renderToasts();
+}
+
+function readDataURL(blob) { return new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = no; fr.readAsDataURL(blob); }); }
+function imgDims(url) { return new Promise(ok => { const i = new Image(); i.onload = () => ok({ w: i.naturalWidth, h: i.naturalHeight }); i.onerror = () => ok({ w: null, h: null }); i.src = url; }); }
+async function toAsset(file, name = file.name) {
+  const dataUrl = await readDataURL(file);
+  const isImg = (file.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(name);
+  const { w, h } = isImg ? await imgDims(dataUrl) : { w: null, h: null };
+  return { name, type: file.type, size: file.size, dataUrl, w, h };
+}
+
+async function setReference(r, file) {
+  if (!file) return;
+  if (!(file.type || '').startsWith('image/')) return notice('error', `${file.name} isn't an image. The Reference is a screenshot.`);
+  r.reference = await toAsset(file);
+  if (!r.reference.w) { r.reference = null; return notice('error', `Couldn't read ${file.name} as an image.`); }
+  if (file.size > DATA_URL_CAP) notice('warn', `${file.name} is ${fmtBytes(file.size)}: over Firefox ESR's 32 MB data: URL cap.`);
+  r.dirty = true; render();
+}
+async function addAssets(r, files) {
+  for (const f of files) {
+    const name = f.name;
+    if (!OK_NAME.test(name)) { notice('error', `Refused “${name}”: use only letters, digits, “.”, “-” and “_” (no spaces or folders). Rename it and drop it again.`); continue; }
+    const clash = r.assets.find(a => a.name.toLowerCase() === name.toLowerCase());
+    if (clash) { notice('error', `Refused “${name}”: clashes with “${clash.name}” (names match case-insensitively in the Reveal).`); continue; }
+    if (f.size > DATA_URL_CAP) notice('warn', `${name} is ${fmtBytes(f.size)}: over Firefox ESR's 32 MB data: URL cap. Shrink it or accept that ESR Contestants won't see it in the Reveal.`);
+    r.assets.push(await toAsset(f));
+  }
+  r.assets.sort((a, b) => a.name.localeCompare(b.name));
+  r.dirty = true; render();
+}
+async function importDist(r, files) {
+  // An original-editor dist/ folder: page.png, assets/*, instructions.html
+  const rel = f => f.webkitRelativePath.split('/').slice(1).join('/');
+  const page = files.find(f => /^page\.(png|jpe?g)$/i.test(rel(f)));
+  const assets = files.filter(f => /^assets\/[^/]+$/i.test(rel(f)) && !f.name.startsWith('.'));
+  const instr = files.find(f => /^instructions\.html$/i.test(rel(f)));
+  if (!page && !assets.length) return notice('error', `That folder doesn't look like an original dist/ (no page.png, no assets/).`);
+  if (r.reference || r.assets.length) { r.reference = null; r.assets = []; }
+  if (page) await setReference(r, page);
+  await addAssets(r, assets);
+  notice('info', `Imported into ${r.name}: ${page ? 'Reference + ' : ''}${assets.length} assets.` + (instr ? ' instructions.html was ignored: the rules text and asset list are generated now.' : ''));
+}
+
+// ============================================================================
+// Export: the filling logic is pure (no DOM) — fillTemplate(template, data, csp)
+// ============================================================================
+const TEMPLATE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="%%CSP%%">
+<title>%%TITLE%%</title>
+<style>body{margin:0;background:#111;color:#ddd;font:15px/1.5 system-ui;padding:24px;display:grid;gap:16px;max-width:1100px}
+.stub{background:#ff2d87;color:#fff;padding:8px 12px;border-radius:8px;font-weight:600}
+.badge{display:inline-block;background:#333;border-radius:999px;padding:2px 10px}
+pre{white-space:pre-wrap;background:#000;padding:12px;border-radius:8px;color:#9fe2a0}
+img{max-width:100%;border:1px solid #333}.assets{display:flex;flex-wrap:wrap;gap:12px}.assets figure{margin:0;max-width:220px}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}dt{color:#888}</style></head>
+<body><div class="stub">STUB Round package from the prep-page prototype. The real file is the Core Editor; this only shows what got baked in.</div>
+<div id="out"></div>
+<script type="application/json" id="round">%%ROUND%%<\/script>
+<script>
+const d = JSON.parse(document.getElementById('round').textContent);
+const e = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+document.getElementById('out').innerHTML =
+  '<h1><span class="badge">Your name · ' + e(d.round.name) + '</span></h1>' +
+  '<dl><dt>Competition</dt><dd>' + e(d.competition.name) + '</dd><dt>Round id</dt><dd>' + e(d.round.id) + '</dd>' +
+  '<dt>Revision</dt><dd>' + e(d.round.revision) + '</dd><dt>Shake</dt><dd>' + (d.competition.shake ? 'on' : 'off') + '</dd>' +
+  '<dt>Connection</dt><dd>' + (d.connection ? e(d.connection.workerUrl) + ' · join ' + e(d.connection.joinCode) + ' · token ' + e(d.connection.contestantToken.slice(0,6)) + '…' : 'none (pure offline)') + '</dd></dl>' +
+  '<h2>Instructions</h2><pre>' + e(d.instructions.rules) + '\\n\\nAssets:\\n' +
+  d.instructions.assets.map(a => '  ' + a.name + (a.w ? '  ' + a.w + '×' + a.h : '')).join('\\n') + '</pre>' +
+  '<h2>Reference</h2><img src="' + d.reference.dataUrl + '">' +
+  '<h2>Assets</h2><div class="assets">' + d.assets.map(a => '<figure><img src="' + a.dataUrl + '"><figcaption>' + e(a.name) + '</figcaption></figure>').join('') + '</div>';
+<\/script></body></html>`;
+
+function fillTemplate(template, data, csp) {
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+  return template.split('%%CSP%%').join(csp).split('%%TITLE%%').join(`${data.round.name} · ${data.competition.name}`).split('%%ROUND%%').join(json);
+}
+function packageData(r, rev) {
+  return {
+    v: 1,
+    competition: { name: S.comp.name, shake: S.comp.shake },
+    round: { id: r.id, name: r.name, revision: rev.stamp },
+    instructions: { rules: S.comp.rules, assets: r.assets.map(a => ({ name: a.name, w: a.w, h: a.h })) },
+    reference: { name: r.reference.name, w: r.reference.w, h: r.reference.h, dataUrl: r.reference.dataUrl },
+    assets: r.assets.map(a => ({ name: a.name, dataUrl: a.dataUrl })),
+    connection: online() ? { workerUrl: S.audience.workerUrl, joinCode: S.audience.joinCode, contestantToken: S.audience.contestantToken } : null,
+  };
+}
+function csp() {
+  const o = workerOrigin();
+  const connect = online() ? `${o} ${o.replace(/^http/, 'ws')}` : `'none'`;
+  return `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src ${connect}`;
+}
+function download(name, text, type = 'text/html') {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function exportRound(r, quiet) {
+  const st = status(r);
+  if (!st.ready) { notice('error', `${r.name || 'Round'}: ${st.problems.join(', ')}`); return false; }
+  const n = (st.last?.n || 0) + 1, at = new Date().toISOString();
+  const rev = { n, at, stamp: `${n}-${at.slice(0, 16).replace(/[-:T]/g, '')}` };
+  download(fileName(r), fillTemplate(TEMPLATE, packageData(r, rev), csp()));
+  r.exports.push(rev); r.dirty = false;
+  if (!quiet) { notice('info', `Downloaded ${fileName(r)} (Rev ${n}).`); render(); }
+  return true;
+}
+function exportMany(rounds) {
+  const done = rounds.filter(r => exportRound(r, true));
+  if (done.length) notice('info', `Downloaded ${done.length} Round package${done.length > 1 ? 's' : ''}. Your browser may ask to allow multiple downloads.`);
+  S.ui.exportedAll = true; render();
+}
+function hostLink() {
+  const o = workerOrigin() || 'https://<your-worker>';
+  const rounds = b64url(JSON.stringify(S.rounds.map(r => ({ id: r.id, name: r.name }))));
+  return `${o}/host#j=${S.audience.joinCode}&s=${S.audience.hostSecret}&t=${S.audience.contestantToken}&r=${rounds}`;
+}
+const stageLink = () => `${workerOrigin() || 'https://<your-worker>'}/stage#j=${S.audience.joinCode}`;
+const phoneLink = () => `${workerOrigin() || 'https://<your-worker>'}/${S.audience.joinCode}`;
+
+function saveCompetition() {
+  download(`${S.comp.slug || 'competition'}.citd-competition.json`, JSON.stringify({ kind: 'citd-competition', v: 1, comp: S.comp, audience: S.audience, rounds: S.rounds }, null, 1), 'application/json');
+  notice('info', 'Saved the Competition file. It holds the Host secret: keep it private.');
+}
+async function openCompetition(file) {
+  try {
+    const d = JSON.parse(await file.text());
+    if (d.kind !== 'citd-competition') throw 0;
+    Object.assign(S.comp, d.comp); Object.assign(S.audience, d.audience); S.rounds = d.rounds; S.ui.sel = S.rounds[0]?.id; render();
+    notice('info', `Opened ${file.name}: Round ids and credentials restored, so re-exports keep autosave and the claim.`);
+  } catch { notice('error', `${file.name} isn't a Competition file.`); }
+}
+
+// ============================================================================
+// Shared view fragments
+// ============================================================================
+const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const chip = st => `<span class="chip ${st.state.cls}">${h(st.state.text)}</span>`;
+const dims = a => a.w ? `${a.w}×${a.h}` : '—';
+
+function refDrop(r, hint = 'Drop the Reference screenshot') {
+  if (!r.reference) return `<div class="drop" data-drop="ref" data-round="${r.id}">${hint}<br><small>or click to choose</small></div>`;
+  const a = r.reference;
+  return `<div data-drop="ref" data-round="${r.id}"><img class="thumb" src="${a.dataUrl}" alt="">
+    <div style="font-size:12px;margin-top:4px"><b>${h(a.name)}</b> · ${dims(a)} · ${fmtBytes(a.size)} ${a.size > DATA_URL_CAP ? '<span class="warn">⚠ over 32 MB</span>' : ''}
+    · <button class="linkbtn" data-act="pick-ref" data-round="${r.id}">replace</button></div></div>`;
+}
+function assetDrop(r, text = 'Drop assets (images, fonts…)') {
+  return `<div class="drop" data-drop="assets" data-round="${r.id}">${text} <small>or click</small></div>`;
+}
+function assetTable(r, opts = {}) {
+  if (!r.assets.length) return `<div class="muted" style="font-size:13px">No assets yet.</div>`;
+  return `<table class="assets">${r.assets.map((a, i) => `<tr>
+    ${opts.thumbs ? `<td style="width:44px"><img src="${a.dataUrl}" style="max-width:40px;max-height:30px;display:block" alt=""></td>` : ''}
+    <td class="mono">${h(a.name)}</td><td>${dims(a)}</td><td class="muted">${fmtBytes(a.size)}</td>
+    <td>${a.size > DATA_URL_CAP ? '<span class="chip warn">over 32 MB</span>' : ''}</td>
+    <td class="x"><button class="linkbtn danger" data-act="rm-asset" data-round="${r.id}" data-i="${i}" title="Remove">✕</button></td></tr>`).join('')}</table>`;
+}
+function instructionsText(r) {
+  return S.comp.rules + '\n\nAssets:\n' + (r.assets.length ? r.assets.map(a => `  ${a.name.padEnd(22)} ${a.w ? a.w + '×' + a.h : ''}`).join('\n') : '  (none)');
+}
+function credentialRows() {
+  const A = S.audience;
+  return `<table class="assets">
+    <tr><td style="width:150px"><b>Join code</b><br><span class="muted">public · Stage + phones</span></td><td><span class="secret" style="font-size:18px;letter-spacing:.15em">${A.joinCode}</span></td></tr>
+    <tr><td><b>Contestant token</b><br><span class="muted">baked into every package</span></td><td><span class="secret">${A.contestantToken}</span></td></tr>
+    <tr><td><b>Host secret</b><br><span class="muted">only in the Host console link</span></td><td><span class="secret">${A.hostSecret.slice(0, 6)}${'•'.repeat(20)}</span></td></tr>
+  </table>`;
+}
+function linkRows() {
+  return `<div style="display:grid;gap:8px;font-size:13px">
+    <div><b>Host console</b> <span class="muted">— private; claims the Competition with your Organizer key on first open</span><br>
+      <span class="secret">${h(hostLink().slice(0, 64))}…</span> <button class="btn" data-act="copy" data-what="host">Copy</button></div>
+    <div><b>Stage</b> <span class="muted">— the venue screen</span><br><span class="secret">${h(stageLink())}</span> <button class="btn" data-act="copy" data-what="stage">Copy</button></div>
+    <div><b>Audience</b> <span class="muted">— shown on the Stage as a QR code</span><br><span class="secret">${h(phoneLink())}</span></div>
+  </div>`;
+}
+function audienceFields() {
+  const A = S.audience;
+  return `<label class="toggle"><input type="checkbox" id="aud-en" data-bind="audience.enabled" ${A.enabled ? 'checked' : ''}> Audience layer (reactions, voting, Stage timer)</label>
+  ${A.enabled ? `
+    <label class="field">Worker URL <span class="muted" style="font-weight:400">— your deployed Worker, or the closed instance</span>
+      <input id="aud-url" data-bind="audience.workerUrl" value="${h(A.workerUrl)}" placeholder="https://citd.example.workers.dev"></label>
+    ${!workerOrigin() ? `<div class="warn" style="font-size:13px">Not a valid URL: packages will be exported offline.</div>` : ''}
+    ${credentialRows()}
+    ${linkRows()}
+    <div style="font-size:13px"><button class="linkbtn danger" data-act="remint">Mint new credentials…</button> <span class="muted">— only before the Competition is claimed; every package must be re-exported.</span></div>
+  ` : `<div class="muted" style="font-size:14px">Packages will be pure offline: no Worker URL, no socket, nothing for the Audience.</div>`}`;
+}
+function compFields(prefix) {
+  return `<label class="field">Competition name <input id="${prefix}-cname" data-bind="comp.name" value="${h(S.comp.name)}"></label>
+  <label class="field">File prefix <span class="muted" style="font-weight:400">— files are named <code>citd-${h(S.comp.slug)}-heat-1.html</code></span>
+    <input id="${prefix}-slug" data-bind="comp.slug" value="${h(S.comp.slug)}" class="mono"></label>
+  <label class="toggle"><input type="checkbox" id="${prefix}-shake" data-bind="comp.shake" ${S.comp.shake ? 'checked' : ''}> Screen shake in Power Mode <span class="muted" style="font-weight:400">— applies to every Round</span></label>
+  <label class="field">Rules <span class="muted" style="font-weight:400">— shown to every Contestant above the generated asset list. Plain text.</span>
+    <textarea id="${prefix}-rules" data-bind="comp.rules">${h(S.comp.rules)}</textarea></label>`;
+}
+const HANDOUT = `<div class="handout">Send each file however you like: USB, AirDrop, a chat link. Tell Contestants: <b>open it where it lands, and don't move or rename it.</b> Hand the Final package to finalists only.</div>`;
+const CHECKLIST = [
+  ['Ahead of the day', ["Don't deploy the Worker from the day before.", 'Optional: send citd-practice.html with the invitation so Contestants can try their own laptops.']],
+  ['Per laptop, before each Heat', ["Open the Round package where it landed (don't move it), in a normal window, not a private one.", 'Enter the name and check the badge shows the right Round.', 'Type a little. Check there is no autosave icon, and that Esc shows the Reference.', 'Run Reset Round.', 'Go fullscreen, turn on Do Not Disturb, disable sleep, plug in power.']],
+  ['If the Audience layer is on', ['Every seat is on the Host console Roster, with no stale-Revision flags.']],
+  ['Spare laptop', ['Every Round package opened and tested on it.']],
+];
+function checklist() {
+  return `<ul class="check">${CHECKLIST.map(([g, items]) => `<h4>${g}</h4>` + items.map(t => `<li><label><input type="checkbox"> <span>${h(t)}</span></label></li>`).join('')).join('')}</ul>`;
+}
+const BANNER = `<div class="proto-banner"><b>Prototype question:</b> nothing here survives a reload — including the Round ids (autosave keys) and the Host secret (the claim). Should the real page autosave the Competition in the browser, or rely on <b>Save / Open Competition file</b>?</div>`;
+const saveOpen = () => `<button class="btn" data-act="save">Save Competition file</button> <button class="btn" data-act="open">Open…</button>`;
+
+// ============================================================================
+// Variant A — Single page
+// ============================================================================
+function VariantA() {
+  const roundCard = r => {
+    const st = status(r);
+    return `<div class="round">
+      <div class="round-head"><input id="a-name-${r.id}" data-rbind="name" data-round="${r.id}" value="${h(r.name)}">
+        <span class="chip">${r.kind}</span> ${chip(st)} <span class="mono muted" style="margin-left:auto">${fileName(r)}</span></div>
+      <div class="round-body">
+        <div>${refDrop(r)}</div>
+        <div style="display:grid;gap:8px;align-content:start">${assetTable(r)}${assetDrop(r)}</div>
+      </div>
+      ${st.warnings.length ? `<div class="warn" style="font-size:13px">${st.warnings.map(h).join('<br>')}</div>` : ''}
+      <div class="round-foot">
+        <button class="linkbtn" data-act="dist" data-round="${r.id}">Import original dist/ folder…</button>
+        <button class="linkbtn danger" data-act="rm-round" data-round="${r.id}">Remove Round</button>
+        <span class="muted" style="font-size:13px;margin-left:auto">${st.last ? `Rev ${st.last.n} · ${fmtTime(st.last.at)} · ` : ''}≈ ${fmtBytes(pkgBytes(r))}</span>
+        <button class="btn" data-act="export" data-round="${r.id}" ${st.ready ? '' : 'disabled'}>Export this Round</button>
+      </div></div>`;
+  };
+  const pending = S.rounds.filter(r => status(r).ready && (r.dirty || !r.exports.length));
+  return `<div class="vA">
+    <header><h1>Prepare a Competition</h1>${saveOpen()}</header>
+    ${BANNER}
+    <section><h2>1 · Competition</h2><div class="row2"><div style="display:grid;gap:12px;align-content:start">${compFields('a').split('<label class="field">Rules')[0]}</div>
+      <div>${'<label class="field">Rules' + compFields('a').split('<label class="field">Rules')[1]}</div></div></section>
+    <section><h2>2 · Rounds <small>— one Round package each</small></h2>
+      ${S.rounds.map(roundCard).join('')}
+      <div style="display:flex;gap:8px"><button class="btn" data-act="add-heat">+ Heat</button><button class="btn" data-act="add-final">+ Final</button></div></section>
+    <section><h2>3 · Audience <small>— optional</small></h2>${audienceFields()}</section>
+    <section><h2>4 · Hand out</h2>
+      <table class="files"><tr><th>File</th><th>Revision</th><th>Size</th><th>State</th></tr>
+        ${S.rounds.map(r => { const st = status(r); return `<tr><td class="mono">${fileName(r)}</td><td>${st.last ? 'Rev ' + st.last.n : '—'}</td><td>${fmtBytes(pkgBytes(r))}</td><td>${chip(st)}</td></tr>`; }).join('')}</table>
+      <div><button class="btn primary big" data-act="export-pending" ${pending.length ? '' : 'disabled'}>Export ${pending.length} Round package${pending.length === 1 ? '' : 's'}</button>
+        <span class="muted" style="font-size:13px">&nbsp;new or changed Rounds only</span></div>
+      ${HANDOUT}
+      <div><h3 style="margin:6px 0">Before the event</h3>${checklist()}</div>
+    </section>
+  </div>`;
+}
+
+// ============================================================================
+// Variant B — Wizard
+// ============================================================================
+const STEPS = ['Competition', 'Rounds', 'Audience', 'Export'];
+function VariantB() {
+  const step = S.ui.step;
+  const stepper = STEPS.map((s, i) => `<button class="step ${i === step ? 'on' : ''} ${i < step ? 'done' : ''}" data-act="step" data-i="${i}"><span class="n">${i < step ? '✓' : i + 1}</span>${s}</button>`).join('');
+  let body = '';
+  if (step === 0) body = `<h2>Name your Competition</h2><p class="lede">This applies to every Round.</p>
+    <div class="card">${compFields('b')}</div>`;
+  if (step === 1) body = `<h2>Add each Round's Reference and assets</h2><p class="lede">Every Heat and the Final gets its own Reference. Asset names are what Contestants type.</p>
+    <table class="rounds"><tr><th>Round</th><th>Reference</th><th>Assets</th><th></th></tr>
+    ${S.rounds.map(r => { const st = status(r); return `<tr>
+      <td><input id="b-name-${r.id}" data-rbind="name" data-round="${r.id}" value="${h(r.name)}"><div style="margin-top:6px">${chip(st)}</div>
+        <div style="margin-top:8px"><button class="linkbtn" data-act="dist" data-round="${r.id}">Import dist/…</button></div></td>
+      <td class="refcell">${refDrop(r, 'Drop Reference')}</td>
+      <td class="assetcell"><div class="assetchips">${r.assets.map((a, i) => `<span class="chip" title="${fmtBytes(a.size)}">${h(a.name)} <span class="muted">${dims(a)}</span> <button class="linkbtn danger" data-act="rm-asset" data-round="${r.id}" data-i="${i}">✕</button></span>`).join('') || '<span class="muted" style="font-size:13px">none</span>'}</div>
+        ${assetDrop(r, 'Drop assets')}${st.warnings.filter(w => !w.startsWith('Audience')).map(w => `<div class="warn" style="font-size:12px;margin-top:4px">${h(w)}</div>`).join('')}</td>
+      <td><button class="linkbtn danger" data-act="rm-round" data-round="${r.id}" title="Remove Round">✕</button></td></tr>`; }).join('')}
+    </table>
+    <div style="display:flex;gap:8px"><button class="btn" data-act="add-heat">+ Heat</button><button class="btn" data-act="add-final">+ Final</button></div>`;
+  if (step === 2) body = `<h2>Bring the Audience in?</h2><p class="lede">Optional. If the backend fails, Contestants notice nothing either way.</p>
+    <div class="card">${audienceFields()}</div>`;
+  if (step === 3) {
+    if (S.ui.exportedAll) body = `<div class="done"><div class="big-ok">✓</div><h2>Your Round packages are downloaded</h2>
+      <p class="lede" style="margin:0">${S.rounds.filter(r => r.exports.length).map(r => `<code>${fileName(r)}</code>`).join(' · ')}</p>${HANDOUT}
+      ${online() ? `<p style="margin:0">Open the Host console and enter your Organizer key: <button class="btn" data-act="copy" data-what="host">Copy Host console link</button></p>` : ''}</div>
+      <div class="card"><h3 style="margin:0">Before the event</h3>${checklist()}</div>
+      <div style="display:flex;gap:10px;justify-content:center">${saveOpen()} <button class="btn" data-act="back-to-review">Back to review</button></div>`;
+    else body = `<h2>Review and export</h2><p class="lede">This is what each Contestant will see when they open their file.</p>
+      <div class="review">${S.rounds.map(r => { const st = status(r); return `<div class="card">
+        <h3>${h(r.name)} ${chip(st)}</h3><div class="mono muted" style="font-size:12px">${fileName(r)} · ≈ ${fmtBytes(pkgBytes(r))}</div>
+        ${r.reference ? `<img class="thumb" src="${r.reference.dataUrl}" style="max-height:160px;object-fit:cover;object-position:top" alt="">` : `<div class="err" style="font-size:13px">${st.problems.join(', ')}</div>`}
+        <pre style="margin:0;font-size:11px;white-space:pre-wrap;background:#111;color:#9fe2a0;padding:8px;border-radius:8px;max-height:140px;overflow:auto">${h(instructionsText(r))}</pre>
+        <div class="muted" style="font-size:12px">${online() ? `Online · join code ${S.audience.joinCode}` : 'Offline only'} · shake ${S.comp.shake ? 'on' : 'off'}</div></div>`; }).join('')}</div>`;
+  }
+  const allReady = S.rounds.every(r => status(r).ready);
+  const nav = step < 3
+    ? `<button class="btn" data-act="step" data-i="${step - 1}" ${step === 0 ? 'disabled' : ''}>Back</button><button class="btn primary" data-act="step" data-i="${step + 1}">Next: ${STEPS[step + 1]}</button>`
+    : S.ui.exportedAll ? '' : `<button class="btn" data-act="step" data-i="2">Back</button>
+      <button class="btn primary big" data-act="export-all" ${allReady ? '' : 'disabled'}>Export all ${S.rounds.length} Round packages</button>
+      ${allReady ? '' : `<span class="err" style="align-self:center;font-size:13px">Fix the Rounds marked red first</span>`}`;
+  return `<div class="vB"><div class="steps">${stepper}</div><main>${step === 0 ? BANNER : ''}${body}</main><div class="navbar">${nav}</div></div>`;
+}
+
+// ============================================================================
+// Variant C — Workbench
+// ============================================================================
+function VariantC() {
+  const sel = S.ui.sel;
+  const navRound = r => { const st = status(r); return `<button class="nav ${sel === r.id ? 'on' : ''}" data-act="sel" data-sel="${r.id}">
+      <span>${h(r.name) || '<i>unnamed</i>'}</span><span class="dot ${st.state.cls}"></span>
+      <span class="sub">${r.reference ? '✓ Reference' : '✗ Reference'} · ${r.assets.length} assets · ${h(st.state.text)}</span></button>`; };
+  const pending = S.rounds.filter(r => status(r).ready && (r.dirty || !r.exports.length));
+  const side = `<aside>
+    <div class="brand"><input id="c-cname" data-bind="comp.name" value="${h(S.comp.name)}"><div class="muted" style="font-size:12px">Organizer prep</div></div>
+    <button class="nav ${sel === 'comp' ? 'on' : ''}" data-act="sel" data-sel="comp"><span>⚙ Competition</span><span></span><span class="sub">rules · shake ${S.comp.shake ? 'on' : 'off'} · file prefix</span></button>
+    <button class="nav ${sel === 'aud' ? 'on' : ''}" data-act="sel" data-sel="aud"><span>📣 Audience</span><span class="dot ${online() ? 'ok' : ''}"></span><span class="sub">${online() ? 'on · join ' + S.audience.joinCode : 'off — packages are offline'}</span></button>
+    <div class="group">Rounds</div>
+    ${S.rounds.map(navRound).join('')}
+    <div class="addrow"><button data-act="add-heat">+ Heat</button><button data-act="add-final">+ Final</button></div>
+    <div class="spacer"></div>
+    <button class="nav ${sel === 'check' ? 'on' : ''}" data-act="sel" data-sel="check"><span>☑ Hand out & checklist</span><span></span></button>
+    <button class="exportall" data-act="export-pending" ${pending.length ? '' : 'disabled'}>Export ${pending.length ? pending.length + ' changed' : 'all up to date'}</button>
+    <div style="display:flex;gap:6px;padding:0 10px">${saveOpen()}</div>
+  </aside>`;
+  let main;
+  const r = R(sel);
+  if (r) {
+    const st = status(r);
+    main = `<div class="topbar"><input class="rname" id="c-name-${r.id}" data-rbind="name" data-round="${r.id}" value="${h(r.name)}">
+        <span class="file">${fileName(r)} · ≈ ${fmtBytes(pkgBytes(r))}</span> ${chip(st)}
+        <button class="go" data-act="export" data-round="${r.id}" ${st.ready ? '' : 'disabled'}>${st.last ? 'Re-export as Rev ' + (st.last.n + 1) : 'Export Rev 1'}</button></div>
+      <div class="work">
+        <div><h3>Reference</h3>${r.reference ? `<div class="refbig" data-drop="ref" data-round="${r.id}"><img src="${r.reference.dataUrl}" alt=""></div>
+          <div class="muted" style="font-size:12px;margin-top:6px">${h(r.reference.name)} · ${dims(r.reference)} · ${fmtBytes(r.reference.size)} · <button class="linkbtn" data-act="pick-ref" data-round="${r.id}">replace</button> · drop a new one onto it</div>`
+          : `<div class="drop" data-drop="ref" data-round="${r.id}" style="padding:120px 20px">Drop the Reference screenshot<br><small>or click to choose</small></div>`}
+          <div style="margin-top:12px;font-size:13px"><button class="linkbtn" data-act="dist" data-round="${r.id}">Import original dist/ folder…</button> · <button class="linkbtn danger" data-act="rm-round" data-round="${r.id}">Remove Round</button></div></div>
+        <div style="display:grid;gap:18px">
+          <div><h3>What the Contestant sees</h3><div class="contestant"><div class="bar"><span>${h(S.comp.name)}</span><span class="badge">Anna · ${h(r.name)}</span></div>
+            <div class="body"><pre>${h(instructionsText(r))}</pre></div></div></div>
+          <div><h3>Assets</h3>${assetTable(r, { thumbs: true })}<div style="margin-top:8px">${assetDrop(r)}</div></div>
+          ${st.warnings.length ? `<div class="warn" style="font-size:13px;color:#ffb02e">${st.warnings.map(h).join('<br>')}</div>` : ''}
+          ${r.exports.length ? `<div><h3>Revisions</h3><div class="muted" style="font-size:13px">${r.exports.slice().reverse().map(e => `Rev ${e.n} · ${fmtTime(e.at)} · <code>${e.stamp}</code>`).join('<br>')}</div>
+            <div class="muted" style="font-size:12px;margin-top:4px">Round id <code>${r.id}</code> stays the same across Revisions, so autosave carries over.</div></div>` : ''}
+        </div></div>`;
+  } else if (sel === 'comp') main = `<div class="pane"><h2>Competition</h2>${BANNER}${compFields('c')}</div>`;
+  else if (sel === 'aud') main = `<div class="pane"><h2>Audience</h2>${audienceFields()}</div>`;
+  else main = `<div class="pane"><h2>Hand out</h2>
+      <table class="assets">${S.rounds.map(r => { const st = status(r); return `<tr><td class="mono">${fileName(r)}</td><td>${chip(st)}</td><td class="muted">${st.last ? fmtTime(st.last.at) : ''}</td></tr>`; }).join('')}</table>
+      ${HANDOUT}<div><h3 style="margin:0 0 6px">Before the event</h3>${checklist()}</div></div>`;
+  return `<div class="vC">${side}<main>${main}</main></div>`;
+}
+
+// ============================================================================
+// Rendering, events, switcher
+// ============================================================================
+const VARIANTS = { A: ['Single page', VariantA], B: ['Wizard', VariantB], C: ['Workbench', VariantC] };
+const KEYS = Object.keys(VARIANTS);
+let variant = new URLSearchParams(location.search).get('variant')?.toUpperCase();
+if (!VARIANTS[variant]) variant = 'A';
+
+const $app = document.getElementById('app');
+function render() {
+  const a = document.activeElement, id = a?.id, s0 = a?.selectionStart, s1 = a?.selectionEnd;
+  $app.innerHTML = VARIANTS[variant][1]();
+  if (id) { const el = document.getElementById(id); if (el) { el.focus(); try { el.setSelectionRange(s0, s1); } catch {} } }
+  document.getElementById('swlabel').textContent = `${variant} — ${VARIANTS[variant][0]}`;
+  renderState();
+}
+function renderToasts() {
+  document.getElementById('toasts').innerHTML = notices.map(n => `<div class="toast ${n.kind}"><span>${h(n.text)}</span><button data-dismiss="${n.id}">✕</button></div>`).join('');
+}
+function renderState() {
+  const p = document.getElementById('statepanel');
+  if (!p.classList.contains('open')) return;
+  p.textContent = JSON.stringify(S, (k, v) => k === 'dataUrl' ? `data:… (${fmtBytes(v.length)})` : v, 2);
+}
+function setVariant(v) { variant = v; const u = new URL(location); u.searchParams.set('variant', v); history.replaceState(null, '', u); render(); }
+
+let pickTarget = null;
+const picker = document.getElementById('picker');
+function pick(kind, roundId) {
+  pickTarget = { kind, roundId };
+  picker.value = '';
+  picker.multiple = kind === 'assets';
+  picker.accept = kind === 'ref' ? 'image/*' : kind === 'open' ? '.json,application/json' : '';
+  picker.webkitdirectory = kind === 'dist';
+  picker.click();
+}
+picker.addEventListener('change', async () => {
+  const files = [...picker.files]; if (!files.length || !pickTarget) return;
+  const r = R(pickTarget.roundId);
+  if (pickTarget.kind === 'ref') await setReference(r, files[0]);
+  if (pickTarget.kind === 'assets') await addAssets(r, files);
+  if (pickTarget.kind === 'dist') await importDist(r, files);
+  if (pickTarget.kind === 'open') await openCompetition(files[0]);
+});
+
+document.addEventListener('click', e => {
+  const sw = e.target.closest('[data-sw]');
+  if (sw) {
+    const i = KEYS.indexOf(variant);
+    if (sw.dataset.sw === 'prev') setVariant(KEYS[(i + KEYS.length - 1) % KEYS.length]);
+    if (sw.dataset.sw === 'next') setVariant(KEYS[(i + 1) % KEYS.length]);
+    if (sw.dataset.sw === 'state') { document.getElementById('statepanel').classList.toggle('open'); renderState(); }
+    return;
+  }
+  const dis = e.target.closest('[data-dismiss]');
+  if (dis) { const i = notices.findIndex(n => String(n.id) === dis.dataset.dismiss); if (i >= 0) notices.splice(i, 1); return renderToasts(); }
+  const el = e.target.closest('[data-act]');
+  if (!el) {
+    const d = e.target.closest('.drop[data-drop]');
+    if (d) pick(d.dataset.drop, d.dataset.round);
+    return;
+  }
+  const r = R(el.dataset.round);
+  switch (el.dataset.act) {
+    case 'pick-ref': return pick('ref', r.id);
+    case 'dist': return pick('dist', r.id);
+    case 'open': return pick('open');
+    case 'save': return saveCompetition();
+    case 'rm-asset': r.assets.splice(+el.dataset.i, 1); r.dirty = true; break;
+    case 'rm-round':
+      if (S.rounds.length <= 1) return notice('error', 'A Competition needs at least one Round.');
+      S.rounds = S.rounds.filter(x => x !== r); if (S.ui.sel === r.id) S.ui.sel = S.rounds[0].id;
+      notice('info', `Removed ${r.name}. If the Host console already claimed the Competition, its Round list still has it.`); break;
+    case 'add-heat': {
+      const n = S.rounds.filter(x => x.kind === 'heat').length + 1, nr = mkRound(`Heat ${n}`, 'heat');
+      const fi = S.rounds.findIndex(x => x.kind === 'final'); S.rounds.splice(fi < 0 ? S.rounds.length : fi, 0, nr); S.ui.sel = nr.id; break;
+    }
+    case 'add-final': { const nr = mkRound('Final', 'final'); S.rounds.push(nr); S.ui.sel = nr.id; break; }
+    case 'export': return exportRound(r);
+    case 'export-pending': return exportMany(S.rounds.filter(x => status(x).ready && (x.dirty || !x.exports.length)));
+    case 'export-all': return exportMany(S.rounds);
+    case 'back-to-review': S.ui.exportedAll = false; break;
+    case 'step': S.ui.step = Math.max(0, Math.min(STEPS.length - 1, +el.dataset.i)); S.ui.exportedAll = false; window.scrollTo(0, 0); break;
+    case 'sel': S.ui.sel = el.dataset.sel; break;
+    case 'copy': navigator.clipboard?.writeText(el.dataset.what === 'host' ? hostLink() : stageLink()); return notice('info', `Copied the ${el.dataset.what === 'host' ? 'Host console' : 'Stage'} link.`);
+    case 'remint':
+      S.audience.joinCode = randFrom(NAME_ALPHA, 6); S.audience.contestantToken = token(); S.audience.hostSecret = token(); touchAll();
+      notice('warn', 'New Join code, Contestant token and Host secret. Every Round package is now stale: re-export them all.'); break;
+  }
+  render();
+});
+
+let raf = 0;
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.bind) {
+    const [obj, key] = t.dataset.bind.split('.');
+    S[obj][key] = t.type === 'checkbox' ? t.checked : t.value;
+    if (obj === 'comp' && key === 'slug') S.comp.slugTouched = true;
+    if (obj === 'comp' && key === 'name' && !S.comp.slugTouched) S.comp.slug = slugify(t.value).slice(0, 12);
+    touchAll(); // every Competition-level change lands in every package
+  } else if (t.dataset.rbind) {
+    const r = R(t.dataset.round); r[t.dataset.rbind] = t.value; r.dirty = true;
+  } else return;
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(render);
+});
+// slug: keep the raw text while typing, normalise on blur
+document.addEventListener('change', e => { if (e.target.dataset.bind === 'comp.slug') { S.comp.slug = slugify(S.comp.slug); render(); } });
+
+document.addEventListener('dragover', e => { const d = e.target.closest('[data-drop]'); if (!d) return; e.preventDefault(); document.querySelectorAll('.over').forEach(x => x.classList.remove('over')); d.classList.add('over'); });
+document.addEventListener('dragleave', e => { const d = e.target.closest('[data-drop]'); if (d && !d.contains(e.relatedTarget)) d.classList.remove('over'); });
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  const d = e.target.closest('[data-drop]'); document.querySelectorAll('.over').forEach(x => x.classList.remove('over'));
+  if (!d) return;
+  const r = R(d.dataset.round), files = [...e.dataTransfer.files];
+  if (d.dataset.drop === 'ref') await setReference(r, files[0]);
+  else await addAssets(r, files);
+});
+window.addEventListener('dragover', e => e.preventDefault()); // a stray drop never navigates away
+
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  const i = KEYS.indexOf(variant);
+  if (e.key === 'ArrowLeft') setVariant(KEYS[(i + KEYS.length - 1) % KEYS.length]);
+  if (e.key === 'ArrowRight') setVariant(KEYS[(i + 1) % KEYS.length]);
+});
+
+// ============================================================================
+// Demo seed: canvas-drawn Reference + assets so the lists have real dimensions
+// ============================================================================
+async function canvasFile(name, w, h, draw, type = 'image/png') {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const blob = await new Promise(ok => c.toBlob(ok, type, .85));
+  return new File([blob], name, { type });
+}
+function drawRef(hue) {
+  return (g, w, h) => {
+    g.fillStyle = `hsl(${hue} 30% 96%)`; g.fillRect(0, 0, w, h);
+    g.fillStyle = `hsl(${hue} 45% 22%)`; g.fillRect(0, 0, w, 90);
+    g.fillStyle = '#fff'; g.font = 'bold 34px system-ui'; g.fillText('ACME', 60, 58);
+    g.font = '20px system-ui'; ['Work', 'About', 'Contact'].forEach((t, i) => g.fillText(t, w - 400 + i * 120, 55));
+    g.fillStyle = `hsl(${hue} 65% 55%)`; g.fillRect(0, 90, w, 520);
+    g.fillStyle = '#fff'; g.font = 'bold 72px system-ui'; g.fillText('Build in the dark.', 80, 330);
+    g.font = '28px system-ui'; g.fillText('No preview. No mercy.', 84, 390);
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle = '#fff'; g.fillRect(80 + i * 380, 680, 340, 380);
+      g.fillStyle = `hsl(${hue + 30 * i} 60% 70%)`; g.fillRect(80 + i * 380, 680, 340, 200);
+      g.fillStyle = '#333'; for (let l = 0; l < 4; l++) g.fillRect(105 + i * 380, 910 + l * 30, 290 - l * 40, 12);
+    }
+    g.fillStyle = `hsl(${hue} 45% 22%)`; g.fillRect(0, h - 140, w, 140);
+  };
+}
+async function seed() {
+  const [h1, h2] = [S.rounds[0], S.rounds[1]];
+  await setReference(h1, await canvasFile('page.png', 1280, 1240, drawRef(200)));
+  await addAssets(h1, [
+    await canvasFile('logo.png', 320, 96, (g, w, h) => { g.fillStyle = '#123'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = 'bold 54px system-ui'; g.fillText('ACME', 60, 68); }),
+    await canvasFile('hero.jpg', 1280, 520, (g, w, h) => { const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#2b8fd6'); gr.addColorStop(1, '#8c2bd6'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }, 'image/jpeg'),
+    await canvasFile('card-1.png', 340, 200, (g, w, h) => { g.fillStyle = '#7fc8a9'; g.fillRect(0, 0, w, h); }),
+  ]);
+  await setReference(h2, await canvasFile('heat2-reference.png', 1280, 1240, drawRef(20)));
+  h1.dirty = h2.dirty = true;
+  render();
+}
+render();
+seed();
+</script>
+</body>
+</html>
