@@ -74,6 +74,10 @@ _Avoid_: Bundle, round file
 One export of a Round package. Re-exporting keeps the same Round but makes a new Revision.
 _Avoid_: Version, build
 
+**Competition file**:
+The Organizer's saved definition of a Competition — its Rounds, their References, assets and colours, and its credentials — exported and reopened by the prep page. It holds the Host secret, so it is never handed to Contestants.
+_Avoid_: Project, save file, config
+
 **Enhancement**:
 Any capability layered on top of the Core Editor (preparation tooling, audience participation) whose absence or failure the Contestant never notices.
 _Avoid_: Plugin, add-on, online mode
