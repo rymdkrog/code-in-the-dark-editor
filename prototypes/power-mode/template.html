@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Not the Core Editor.
+  Question: "Does Power Mode feel the same on the new engine?" (wayfinder ticket #8)
+  Three variants of the Power Mode effects on ACE 1.44, switchable via ?variant= and the bottom bar:
+    A — Original: the 2016 effects ported verbatim (per-frame physics, always-on rAF loop,
+        canvas sized once, margin shake, pulses restart on re-rendered lines).
+    B — v2: same constants; time-based physics, loop idles with no particles, canvas tracks
+        window size + devicePixelRatio, transform shake (honours reduced motion).
+    C — v2 + synced pulses: B, but every pulsing token shares one animation phase.
+  Editor settings are identical across variants (auto-close off, auto-indent on, search kept),
+  so only the effects differ. Built by build.mjs into power-mode-prototype.html.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Power Mode prototype</title>
+<style>
+@font-face {
+  font-family: "Press Start 2P";
+  src: url(data:font/woff2;base64,__FONT__) format("woff2");
+}
+body, html {
+  font-family: "Press Start 2P", sans-serif;
+  width: 100%; height: 100%; overflow: hidden;
+  padding: 0; margin: 0; background: black;
+}
+body { position: relative; }
+button {
+  font-family: "Press Start 2P", sans-serif;
+  appearance: none; background-color: #3A9364; color: white;
+  font-size: 12px; padding: 10px 15px; box-shadow: none; border: none; cursor: pointer;
+}
+button:focus { border: none; box-shadow: none; outline: none; }
+
+/* Placeholder art — v2 gets new original art; CITD logos are not reused. */
+.background {
+  position: absolute; inset: 0; z-index: 0; opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 476'%3E%3Cpath d='M300 40a200 200 0 1 0 180 280A160 160 0 1 1 300 40z' fill='none' stroke='%233A9364' stroke-width='18'/%3E%3Ctext x='250' y='270' font-family='monospace' font-size='96' fill='%233A9364' text-anchor='middle'%3E%26lt;/%26gt;%3C/text%3E%3C/svg%3E");
+  background-position: 50% 50%; background-repeat: no-repeat; background-size: 520px 476px;
+}
+.power-mode .background {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 476'%3E%3Cpath d='M300 40a200 200 0 1 0 180 280A160 160 0 1 1 300 40z' fill='none' stroke='%2300DDFF' stroke-width='18'/%3E%3Ctext x='250' y='270' font-family='monospace' font-size='96' fill='%2300DDFF' text-anchor='middle'%3E%26lt;/%26gt;%3C/text%3E%3C/svg%3E");
+  animation: background-power 2s infinite both;
+}
+
+.canvas-overlay { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; }
+
+#editor {
+  position: absolute; top: 0; bottom: 0; left: 0; right: 0; margin: 0;
+  background: transparent; font-size: 14px; transform: translate3d(0, 0, 0);
+}
+#editor .ace_keyword, #editor .ace_meta, #editor .ace_fold,
+#editor .ace_entity.ace_name.ace_function, #editor .ace_support.ace_function,
+#editor .ace_variable { color: #00FF79; }
+#editor .ace_comment { color: #0DFDFF; display: inline-block; animation: grow 1.5s infinite both; }
+#editor .ace_gutter { background: rgba(0,0,0,0.5); }
+#editor .ace_constant, #editor .ace_constant.ace_character,
+#editor .ace_constant.ace_character.ace_escape, #editor .ace_constant.ace_other,
+#editor .ace_string { color: #F9FF00; animation: pulse 1.5s infinite both; }
+
+body.power-mode #editor .ace_keyword, body.power-mode #editor .ace_meta,
+body.power-mode #editor .ace_fold, body.power-mode #editor .ace_entity.ace_name.ace_function,
+body.power-mode #editor .ace_support.ace_function, body.power-mode #editor .ace_variable { color: #00DDFF; }
+body.power-mode #editor .ace_comment { color: #00FF79; }
+body.power-mode #editor .ace_constant, body.power-mode #editor .ace_string { color: #F9FF00; }
+body.power-mode #editor .ace_entity.ace_other.ace_attribute-name { color: #8194F4; }
+
+.streak-container { position: absolute; z-index: 10; right: 20px; top: 20px; text-align: right; }
+.streak-container .current { color: white; font-size: 16px; }
+.streak-container .bar {
+  position: relative; opacity: 0.5; margin-top: 23px; height: 8px;
+  background: #4EFFA1; width: 100%; transform: scaleX(0);
+}
+.streak-container .counter { font-size: 80px; color: #4EFFA1; padding-top: 30px; }
+.streak-container .counter.bump { animation: grow 0.25s both; }
+.streak-container .exclamations {
+  position: absolute; bottom: -20px; right: 0; display: block;
+  color: #4EFFA1; opacity: 0.75; font-size: 20px; text-align: right;
+}
+.streak-container .exclamations .exclamation {
+  right: 0; top: 0; display: block; position: absolute; min-width: 200px;
+  animation: exclamation 1.5s ease-out both;
+}
+
+.button-bar { position: absolute; z-index: 10; bottom: 20px; right: 20px; }
+.button-bar button { float: right; margin-left: 10px; }
+
+.reference-screenshot-container {
+  position: absolute; z-index: 50; bottom: 62px; right: 20px;
+  color: white; text-align: right; font-size: 12px;
+}
+.reference-screenshot {
+  width: 200px; height: 160px; margin-top: 15px;
+  background: linear-gradient(#e8e4dc 0 22%, #c94f3d 22% 26%, #f4f1ea 26%);
+}
+
+.name-tag {
+  position: absolute; z-index: 40; bottom: 20px; left: 20px; padding: 20px;
+  background: rgba(58, 147, 100, 0.75); color: white; font-size: 56px;
+}
+
+.power-mode-indicator {
+  position: absolute; z-index: 5; width: 100%; text-align: center; top: 20px;
+  pointer-events: none; opacity: 0; transition: opacity 0.25s;
+}
+.power-mode-indicator h1 { font-size: 40px; margin: 0; color: #00DDFF; }
+
+body.power-mode .power-mode-indicator { opacity: 1; animation: power-mode-indicator 750ms linear both; }
+body.power-mode .name-tag { background: rgba(0, 221, 255, 0.75); }
+body.power-mode .streak-container .counter { color: #00DDFF; }
+body.power-mode .streak-container .bar { background: #00DDFF; }
+body.power-mode button { background: #3A5A93; }
+body.power-mode .exclamations .exclamation { color: #00DDFF; }
+
+@keyframes pulse {
+  0% { animation-timing-function: ease-out; }
+  50% { opacity: 0.5; animation-timing-function: ease-in; }
+}
+@keyframes grow {
+  0% { animation-timing-function: ease-out; }
+  50% { transform: scale(1.3); animation-timing-function: ease-in; }
+}
+@keyframes exclamation {
+  100% { opacity: 0; transform: translate3D(0, 100px, 0); }
+}
+@keyframes background-power {
+  0% { animation-timing-function: ease-out; }
+  50% { transform: scale(1.5); animation-timing-function: ease-in; }
+}
+@keyframes power-mode-indicator {
+  0% { transform: matrix3d(0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  3.2% { transform: matrix3d(0.673, 0.192, 0, 0, 0.126, 0.673, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  4.5% { transform: matrix3d(0.743, 0.25, 0, 0, 0.163, 0.743, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  6.41% { transform: matrix3d(0.836, 0.301, 0, 0, 0.196, 0.836, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  9.01% { transform: matrix3d(0.94, 0.308, 0, 0, 0.201, 0.94, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  12.71% { transform: matrix3d(1.032, 0.234, 0, 0, 0.154, 1.032, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  13.51% { transform: matrix3d(1.044, 0.212, 0, 0, 0.14, 1.044, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  17.92% { transform: matrix3d(1.07, 0.098, 0, 0, 0.066, 1.07, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  18.92% { transform: matrix3d(1.069, 0.077, 0, 0, 0.052, 1.069, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  25.23% { transform: matrix3d(1.038, -0.001, 0, 0, -0.001, 1.038, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  29.03% { transform: matrix3d(1.016, -0.015, 0, 0, -0.01, 1.016, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  31.43% { transform: matrix3d(1.006, -0.017, 0, 0, -0.011, 1.006, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  34.63% { transform: matrix3d(0.997, -0.014, 0, 0, -0.01, 0.997, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  40.14% { transform: matrix3d(0.992, -0.007, 0, 0, -0.005, 0.992, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  56.46% { transform: matrix3d(1, 0.001, 0, 0, 0.001, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  62.36% { transform: matrix3d(1.001, 0.001, 0, 0, 0, 1.001, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  81.48% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  100% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+}
+
+/* ---- Prototype chrome: deliberately not part of the design being judged ---- */
+.proto-bar, .proto-hud {
+  position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #111; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.5);
+}
+.proto-bar {
+  bottom: 12px; display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 999px; border: 2px solid #ff3d7f;
+}
+.proto-bar button, .proto-hud button {
+  font: inherit; background: #eee; color: #111; padding: 3px 9px; border-radius: 999px;
+}
+.proto-bar button:hover, .proto-hud button:hover { background: #ddd; }
+.proto-bar .label { min-width: 260px; text-align: center; font-weight: 700; }
+.proto-hud {
+  bottom: 62px; width: min(760px, calc(100vw - 32px)); border-radius: 10px;
+  padding: 10px 12px; border: 2px solid #ff3d7f; opacity: .92;
+}
+.proto-hud[hidden] { display: none; }
+.proto-hud .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 14px; }
+.proto-hud .k { color: #666; }
+.proto-hud .v { font-weight: 700; }
+.proto-hud .warn { color: #c0003c; }
+.proto-hud .ok { color: #08752f; }
+.proto-hud .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+.proto-hud .swatch { display: inline-block; width: 10px; height: 10px; vertical-align: middle; margin-right: 4px; }
+.proto-hud label { display: inline-flex; gap: 4px; align-items: center; }
+.proto-hud .note { color: #555; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="background"></div>
+  <canvas class="canvas-overlay"></canvas>
+  <pre id="editor"></pre>
+  <div class="streak-container">
+    <div class="current">Combo</div>
+    <div class="counter">0</div>
+    <div class="bar"></div>
+    <div class="exclamations"></div>
+  </div>
+  <div class="reference-screenshot-container">
+    <span>Reference</span>
+    <div class="reference-screenshot"></div>
+  </div>
+  <div class="name-tag">Contestant</div>
+  <div class="power-mode-indicator"><h1>POWER MODE!</h1></div>
+  <div class="button-bar">
+    <button tabindex="-1">Finish</button>
+    <button tabindex="-1">Instructions</button>
+  </div>
+
+  <div class="proto-hud" id="hud">
+    <div class="grid" id="hud-grid"></div>
+    <div class="row">
+      <button data-act="combo195">Combo → 195</button>
+      <button data-act="combo500">Combo → 500</button>
+      <button data-act="combo800">Combo → 800</button>
+      <button data-act="robo">Robo-typist: off</button>
+      <label><input type="checkbox" id="cap30"> cap effects loop at 30 fps</label>
+      <label><input type="checkbox" id="fakeReduced"> pretend reduced motion</label>
+      <button data-act="resetLatency">reset latency</button>
+    </div>
+    <div class="note" id="hud-note"></div>
+  </div>
+  <div class="proto-bar">
+    <span style="color:#ff3d7f;font-weight:700">PROTOTYPE</span>
+    <button data-act="prev" title="previous variant">◀</button>
+    <span class="label" id="variant-label"></span>
+    <button data-act="next" title="next variant">▶</button>
+    <button data-act="hud">stats</button>
+  </div>
+
+<script>/*__ACE__*/</script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Constants — verbatim from codeinthedark/editor app.coffee (04bf2d7)
+// ---------------------------------------------------------------------------
+const POWER_MODE_ACTIVATION_THRESHOLD = 200;
+const STREAK_TIMEOUT = 10 * 1000;
+const MAX_PARTICLES = 500;
+const PARTICLE_NUM_RANGE = [5, 6, 7, 8, 9, 10, 11, 12];
+const PARTICLE_GRAVITY = 0.075;
+const PARTICLE_SIZE = 8;
+const PARTICLE_ALPHA_FADEOUT = 0.96;
+const PARTICLE_VELOCITY_RANGE = { x: [-2.5, 2.5], y: [-7, -3.5] };
+const PARTICLE_COLORS = {
+  "text": [255, 255, 255],
+  "text.xml": [255, 255, 255],
+  "keyword": [0, 221, 255],
+  "variable": [0, 221, 255],
+  "meta.tag.tag-name.xml": [0, 221, 255],
+  "keyword.operator.attribute-equals.xml": [0, 221, 255],
+  "constant": [249, 255, 0],
+  "constant.numeric": [249, 255, 0],
+  "support.constant": [249, 255, 0],
+  "string.attribute-value.xml": [249, 255, 0],
+  "string.unquoted.attribute-value.html": [249, 255, 0],
+  "entity.other.attribute-name.xml": [129, 148, 244],
+  "comment": [0, 255, 121],
+  "comment.xml": [0, 255, 121],
+};
+const EXCLAMATION_EVERY = 10;
+const EXCLAMATIONS = ["Super!", "Radical!", "Fantastic!", "Great!", "OMG",
+  "Whoah!", ":O", "Nice!", "Splendid!", "Wild!", "Grand!", "Impressive!",
+  "Stupendous!", "Extreme!", "Awesome!"];
+
+// underscore stand-ins
+const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const defer = (fn) => setTimeout(fn, 1);
+const debounce = (fn, wait) => { let t; return () => { clearTimeout(t); t = setTimeout(fn, wait); }; };
+const throttleLeading = (fn, wait) => {
+  let last = -Infinity;
+  return (...args) => { const now = Date.now(); if (now - last >= wait) { last = now; fn(...args); } };
+};
+
+const $ = (s) => document.querySelector(s);
+const body = document.body;
+const editorEl = $("#editor");
+const canvas = $(".canvas-overlay");
+const ctx = canvas.getContext("2d");
+
+// ---------------------------------------------------------------------------
+// Editor — identical for every variant (decisions from ticket #5)
+// ---------------------------------------------------------------------------
+const editor = ace.edit("editor");
+editor.setShowPrintMargin(false);
+editor.setHighlightActiveLine(false);
+editor.setFontSize(20);
+editor.setTheme("ace/theme/vibrant_ink");
+editor.session.setMode("ace/mode/html");
+editor.session.setOption("useWorker", false);
+editor.session.setFoldStyle("manual");
+editor.setOption("behavioursEnabled", false); // auto-close off
+editor.setOption("enableAutoIndent", true);   // Enter copies indentation
+// Parity fix: ACE 1.44 tokenises <!-- / text / --> as three types, so the comment `grow`
+// animation scales three spans independently and they overlap. The 2016 ACE used one
+// type (comment.xml), which the tokenizer merges into one span. Restore that.
+(function mergeCommentTokens() {
+  const mode = editor.session.getMode();
+  const rules = mode.$highlightRules.getRules();
+  for (const state of Object.values(rules)) {
+    for (const rule of state) {
+      if (rule.token === "comment.start.xml" || rule.token === "comment.end.xml") rule.token = "comment.xml";
+    }
+  }
+  const Tokenizer = ace.require("ace/tokenizer").Tokenizer;
+  mode.$tokenizer = new Tokenizer(rules);
+  editor.session.bgTokenizer.setTokenizer(mode.$tokenizer);
+})();
+editor.setValue(`<!DOCTYPE html>
+<html>
+  <head>
+    <!-- type fast: 200 Combo enters Power Mode -->
+    <style>
+      body { font-family: "Helvetica", sans-serif; margin: 0; }
+      .hero { background: #c94f3d; height: 120px; }
+    </style>
+  </head>
+  <body>
+    <div class="hero" id="top">
+      <h1 title="hello">Hello, dark</h1>
+    </div>
+
+  </body>
+</html>
+`, -1);
+editor.gotoLine(14, 4);
+editor.focus();
+
+// ---------------------------------------------------------------------------
+// Combo, exclamations, Power Mode — DOM/CSS only, same in every variant
+// ---------------------------------------------------------------------------
+const $counter = $(".streak-container .counter");
+const $bar = $(".streak-container .bar");
+const $exclamations = $(".streak-container .exclamations");
+let currentStreak = 0;
+let powerMode = false;
+
+function renderStreak() {
+  $counter.textContent = currentStreak;
+  $counter.classList.remove("bump");
+  defer(() => $counter.classList.add("bump"));
+}
+function refreshStreakBar() {
+  $bar.style.transform = "scaleX(1)";
+  $bar.style.transition = "none";
+  defer(() => { $bar.style.transform = ""; $bar.style.transition = `all ${STREAK_TIMEOUT}ms linear`; });
+}
+function showExclamation() {
+  const el = document.createElement("span");
+  el.className = "exclamation";
+  el.textContent = sample(EXCLAMATIONS);
+  $exclamations.prepend(el);
+  setTimeout(() => el.remove(), 3000);
+}
+function activatePowerMode() { powerMode = true; body.classList.add("power-mode"); }
+function deactivatePowerMode() { powerMode = false; body.classList.remove("power-mode"); }
+function increaseStreak() {
+  currentStreak++;
+  if (currentStreak > 0 && currentStreak % EXCLAMATION_EVERY === 0) showExclamation();
+  if (currentStreak >= POWER_MODE_ACTIVATION_THRESHOLD && !powerMode) activatePowerMode();
+  refreshStreakBar();
+  renderStreak();
+}
+function endStreak() { currentStreak = 0; renderStreak(); deactivatePowerMode(); }
+const debouncedEndStreak = debounce(endStreak, STREAK_TIMEOUT);
+
+function randomVelocity() {
+  const r = PARTICLE_VELOCITY_RANGE;
+  return {
+    x: r.x[0] + Math.random() * (r.x[1] - r.x[0]),
+    y: r.y[0] + Math.random() * (r.y[1] - r.y[0]),
+  };
+}
+const particleColor = (type) => PARTICLE_COLORS[type] || [255, 255, 255];
+const shakeIntensity = () =>
+  1 + 2 * Math.random() * Math.floor((currentStreak - POWER_MODE_ACTIVATION_THRESHOLD) / 100);
+
+// Instrumentation shared by the variants
+const stats = {
+  fxFrames: 0, fxFps: 0, live: 0, loop: "—", aceRenders: 0, aceRendersPs: 0,
+  aceResizes: 0, fullTextRenders: 0, shakes: 0, lastToken: "—", lastColor: [255, 255, 255],
+  latencies: [], frameCostMax: 0,
+};
+let cap30 = false;
+let fakeReduced = false;
+const reducedMotionQuery = matchMedia("(prefers-reduced-motion: reduce)");
+const reducedMotion = () => fakeReduced || reducedMotionQuery.matches;
+// A frame-skipping gate used only by the "cap at 30 fps" checkbox.
+let lastAccepted = 0;
+function frameAllowed(time) {
+  if (!cap30) return true;
+  if (time - lastAccepted < 30) return false;
+  lastAccepted = time;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Variant A — Original effects, verbatim
+// ---------------------------------------------------------------------------
+function OriginalFx() {
+  let particles = [];
+  let particlePointer = 0;
+  let running = false;
+
+  function setupCanvas() { // sized once, never on resize; no devicePixelRatio
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvas.style.width = canvas.style.height = "";
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  function getCursorPosition() {
+    let { left, top } = editor.renderer.$cursorLayer.getPixelPosition();
+    left += editor.renderer.gutterWidth + 4;
+    top -= editor.renderer.scrollTop;
+    return { x: left, y: top };
+  }
+  function spawnParticles(type) {
+    if (!powerMode) return;
+    const { x, y } = getCursorPosition();
+    const n = sample(PARTICLE_NUM_RANGE);
+    const color = particleColor(type);
+    stats.lastToken = type; stats.lastColor = color;
+    for (let i = 0; i < n; i++) {
+      particles[particlePointer] = { x, y: y + 10, alpha: 1, color, velocity: randomVelocity() };
+      particlePointer = (particlePointer + 1) % MAX_PARTICLES;
+    }
+  }
+  function drawParticles() { // full clear + walk all 500 slots, every frame, forever
+    const t0 = performance.now();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let live = 0;
+    for (const p of particles) {
+      if (p.alpha <= 0.1) continue;
+      live++;
+      p.velocity.y += PARTICLE_GRAVITY;
+      p.x += p.velocity.x;
+      p.y += p.velocity.y;
+      p.alpha *= PARTICLE_ALPHA_FADEOUT; // per frame: decays twice as fast at 120 Hz
+      ctx.fillStyle = `rgba(${p.color.join(", ")}, ${p.alpha})`;
+      ctx.fillRect(Math.round(p.x - PARTICLE_SIZE / 2), Math.round(p.y - PARTICLE_SIZE / 2),
+        PARTICLE_SIZE, PARTICLE_SIZE);
+    }
+    stats.live = live;
+    stats.frameCostMax = Math.max(stats.frameCostMax, performance.now() - t0);
+  }
+  function onFrame(time) {
+    if (!running) return;
+    if (frameAllowed(time)) { stats.fxFrames++; drawParticles(); }
+    requestAnimationFrame(onFrame);
+  }
+  function shake() { // margin shake: resizes ACE's container
+    if (!powerMode) return;
+    stats.shakes++;
+    const i = shakeIntensity();
+    const x = i * (Math.random() > 0.5 ? -1 : 1);
+    const y = i * (Math.random() > 0.5 ? -1 : 1);
+    editorEl.style.margin = `${y}px ${x}px`;
+    setTimeout(() => { editorEl.style.margin = ""; }, 75);
+  }
+  const throttledShake = throttleLeading(shake, 100);
+  const throttledSpawn = throttleLeading(spawnParticles, 25);
+
+  return {
+    key: "A", name: "Original (verbatim port)",
+    note: "Per-frame physics (×0.96 alpha/frame), rAF loop always running, canvas sized once at load (try resizing the window), margin-based shake (ACE resize observer off, as in 2016).",
+    start() {
+      // The 2016 ACE had no ResizeObserver, so a margin shake never re-rendered the editor.
+      // ACE 1.44 would re-measure and re-render every line ~10×/s in Power Mode,
+      // restarting every pulse — an artifact the original never had. Turn it off here.
+      editor.setOption("useResizeObserver", false);
+      setupCanvas(); running = true; stats.loop = "always on"; requestAnimationFrame(onFrame);
+    },
+    stop() {
+      running = false; particles = []; ctx.clearRect(0, 0, canvas.width, canvas.height); editorEl.style.margin = "";
+      editor.setOption("useResizeObserver", true);
+    },
+    onChange(delta) {
+      const insert = delta.action === "insert";
+      throttledShake();
+      const pos = insert ? delta.end : delta.start;
+      const token = editor.session.getTokenAt(pos.row, pos.column);
+      defer(() => { if (token) throttledSpawn(token.type); });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Variants B and C — v2 effects: same constants, flaws fixed
+// ---------------------------------------------------------------------------
+const FRAME_MS = 1000 / 60; // the original was tuned at 60 Hz; normalise to it
+
+function V2Fx({ syncPulses }) {
+  const particles = [];
+  let running = false; // is a rAF loop scheduled?
+  let active = false;
+  let lastTime = 0;
+  let dpr = 1;
+
+  function sizeCanvas() {
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function getCursorPosition() { // page coordinates, so horizontal scroll is honoured too
+    const c = editor.getCursorPosition();
+    const p = editor.renderer.textToScreenCoordinates(c.row, c.column);
+    return { x: p.pageX + 4, y: p.pageY };
+  }
+  function spawnParticles(type) {
+    if (!powerMode) return;
+    const { x, y } = getCursorPosition();
+    const n = sample(PARTICLE_NUM_RANGE);
+    const color = particleColor(type);
+    stats.lastToken = type; stats.lastColor = color;
+    for (let i = 0; i < n; i++) {
+      if (particles.length >= MAX_PARTICLES) particles.shift();
+      const v = randomVelocity();
+      particles.push({ x, y: y + 10, alpha: 1, color, vx: v.x, vy: v.y });
+    }
+    stats.live = particles.length;
+    wake();
+  }
+  function wake() {
+    if (running || !active) return;
+    running = true;
+    stats.loop = "running";
+    lastTime = performance.now();
+    requestAnimationFrame(onFrame);
+  }
+  function onFrame(time) {
+    if (!active) { running = false; return; }
+    if (!frameAllowed(time)) { requestAnimationFrame(onFrame); return; }
+    const t0 = performance.now();
+    // Elapsed time in 60 Hz frames; clamp so a backgrounded tab doesn't teleport particles.
+    const k = Math.min(time - lastTime, 100) / FRAME_MS;
+    lastTime = time;
+    stats.fxFrames++;
+    const fade = Math.pow(PARTICLE_ALPHA_FADEOUT, k);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let w = 0;
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.vy += PARTICLE_GRAVITY * k;
+      p.x += p.vx * k;
+      p.y += p.vy * k;
+      p.alpha *= fade;
+      if (p.alpha <= 0.1) continue;
+      particles[w++] = p;
+      ctx.fillStyle = `rgba(${p.color[0]}, ${p.color[1]}, ${p.color[2]}, ${p.alpha})`;
+      ctx.fillRect(Math.round(p.x - PARTICLE_SIZE / 2), Math.round(p.y - PARTICLE_SIZE / 2),
+        PARTICLE_SIZE, PARTICLE_SIZE);
+    }
+    particles.length = w;
+    stats.live = w;
+    stats.frameCostMax = Math.max(stats.frameCostMax, performance.now() - t0);
+    if (w > 0) requestAnimationFrame(onFrame);
+    else { running = false; stats.loop = "idle (0 CPU)"; }
+  }
+  let shakeTimer;
+  function shake() { // transform shake: no layout, ACE is never resized
+    if (!powerMode || reducedMotion()) return;
+    stats.shakes++;
+    const i = shakeIntensity();
+    const x = i * (Math.random() > 0.5 ? -1 : 1);
+    const y = i * (Math.random() > 0.5 ? -1 : 1);
+    editorEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    clearTimeout(shakeTimer);
+    shakeTimer = setTimeout(() => { editorEl.style.transform = ""; }, 75);
+  }
+  const throttledShake = throttleLeading(shake, 100);
+  const throttledSpawn = throttleLeading(spawnParticles, 25);
+
+  // C only: align every newly rendered pulsing token to one shared phase.
+  // CSS animations restart whenever ACE re-renders a line; pinning startTime to the
+  // document timeline origin puts them all on the same beat.
+  function syncNewTokens() {
+    const els = editor.renderer.content.querySelectorAll(".ace_comment, .ace_string, .ace_constant");
+    for (const el of els) {
+      if (el.__synced) continue;
+      el.__synced = true;
+      for (const a of el.getAnimations()) a.startTime = 0;
+    }
+  }
+
+  return {
+    key: syncPulses ? "C" : "B",
+    name: syncPulses ? "v2 + synced pulses" : "v2 (fixes, pulses as original)",
+    note: syncPulses
+      ? "As B, but every pulsing string/comment shares one beat instead of restarting when its line re-renders."
+      : "Time-based physics normalised to 60 Hz, loop sleeps when no particles live, canvas follows window size + DPR, transform shake (off under reduced motion). Pulses restart on the typed line, as in the original.",
+    start() {
+      active = true;
+      sizeCanvas();
+      window.addEventListener("resize", sizeCanvas);
+      stats.loop = "idle (0 CPU)";
+      if (syncPulses) { editor.renderer.on("afterRender", syncNewTokens); syncNewTokens(); }
+    },
+    stop() {
+      active = false;
+      particles.length = 0;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      window.removeEventListener("resize", sizeCanvas);
+      editorEl.style.transform = "";
+      if (syncPulses) editor.renderer.off("afterRender", syncNewTokens);
+    },
+    onChange(delta) {
+      const insert = delta.action === "insert";
+      throttledShake();
+      const pos = insert ? delta.end : delta.start;
+      const token = editor.session.getTokenAt(pos.row, pos.column);
+      defer(() => { if (token) throttledSpawn(token.type); });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Wiring + variant switcher
+// ---------------------------------------------------------------------------
+const VARIANTS = { A: () => OriginalFx(), B: () => V2Fx({ syncPulses: false }), C: () => V2Fx({ syncPulses: true }) };
+const ORDER = ["A", "B", "C"];
+let fx = null;
+
+function setVariant(key) {
+  if (!VARIANTS[key]) key = "A";
+  if (fx) fx.stop();
+  fx = VARIANTS[key]();
+  fx.start();
+  // Re-render every line so pulse animations start fresh under the new variant.
+  editor.renderer.updateFull(true);
+  const url = new URL(location.href);
+  url.searchParams.set("variant", key);
+  history.replaceState(null, "", url);
+  $("#variant-label").textContent = `${fx.key} — ${fx.name}`;
+  $("#hud-note").textContent = fx.note;
+  stats.frameCostMax = 0;
+  editor.focus();
+}
+
+editor.session.on("change", (delta) => {
+  if (delta.action === "insert") { increaseStreak(); debouncedEndStreak(); }
+  fx.onChange(delta);
+});
+window.addEventListener("beforeunload", (e) => { e.preventDefault(); e.returnValue = "Hold your horses!"; });
+
+// Instrumentation: ACE renders and resizes, key → next frame latency
+editor.renderer.on("afterRender", () => { stats.aceRenders++; });
+const origUpdateSize = editor.renderer.$updateCachedSize.bind(editor.renderer);
+editor.renderer.$updateCachedSize = function (...args) {
+  const changes = origUpdateSize(...args);
+  if (changes) stats.aceResizes++;
+  return changes;
+};
+// A full text-layer update re-creates every line's spans, restarting every pulse.
+const textLayer = editor.renderer.$textLayer;
+const origTextUpdate = textLayer.update.bind(textLayer);
+textLayer.update = function (config) { stats.fullTextRenders++; return origTextUpdate(config); };
+document.addEventListener("keydown", (e) => {
+  if (e.target !== editor.textInput.getElement()) return;
+  const t0 = e.timeStamp;
+  requestAnimationFrame(() => {
+    stats.latencies.push(performance.now() - t0);
+    if (stats.latencies.length > 200) stats.latencies.shift();
+  });
+}, true);
+
+// HUD
+const hud = $("#hud");
+function pct(arr, q) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+}
+setInterval(() => {
+  stats.fxFps = stats.fxFrames; stats.fxFrames = 0;
+  stats.aceRendersPs = stats.aceRenders; stats.aceRenders = 0;
+  if (hud.hidden) return;
+  const L = stats.latencies;
+  const avg = L.length ? L.reduce((a, b) => a + b, 0) / L.length : 0;
+  const c = stats.lastColor;
+  const rows = [
+    ["variant", fx.key],
+    ["combo", currentStreak],
+    ["power mode", powerMode ? "ON" : "off"],
+    ["shake max px", powerMode ? (1 + 2 * Math.floor((currentStreak - 200) / 100)).toFixed(0) : "—"],
+    ["effects loop", `<span class="${stats.loop.startsWith("idle") ? "ok" : "warn"}">${stats.loop}</span>`],
+    ["loop frames/s", stats.fxFps],
+    ["live particles", stats.live],
+    ["worst frame cost", stats.frameCostMax.toFixed(2) + " ms"],
+    ["key→frame avg", avg.toFixed(1) + " ms"],
+    ["key→frame p95", pct(L, 0.95).toFixed(1) + " ms"],
+    ["key→frame max", (L.length ? Math.max(...L) : 0).toFixed(1) + " ms"],
+    ["keys sampled", L.length],
+    ["ACE renders/s", stats.aceRendersPs],
+    ["ACE resizes", `<span class="${stats.aceResizes ? "warn" : "ok"}">${stats.aceResizes}</span>`],
+    ["full re-renders", stats.fullTextRenders],
+    ["reduced motion", reducedMotion() ? "yes" : "no"],
+    ["last token", `<span class="swatch" style="background:rgb(${c})"></span>${stats.lastToken}`],
+  ];
+  $("#hud-grid").innerHTML = rows
+    .map(([k, v]) => `<div><span class="k">${k}</span> <span class="v">${v}</span></div>`).join("");
+}, 1000);
+
+// Robo-typist: drives the real ACE insert path (incl. auto-indent) at ~15 chars/s
+const ROBO_TEXT = `<section class="cards">\n<!-- three cards -->\n<article class="card" data-n="1">\n<h2>Lorem "ipsum"</h2>\n<p style="color: #333">Dolor sit amet</p>\n</article>\n</section>\n`;
+let roboTimer = null, roboIdx = 0;
+function toggleRobo(btn) {
+  if (roboTimer) { clearInterval(roboTimer); roboTimer = null; btn.textContent = "Robo-typist: off"; return; }
+  btn.textContent = "Robo-typist: ON";
+  roboTimer = setInterval(() => {
+    const ch = ROBO_TEXT[roboIdx++ % ROBO_TEXT.length];
+    editor.insert(ch);
+  }, 66);
+}
+
+function jumpCombo(n) {
+  currentStreak = n - 1;
+  increaseStreak();
+  if (currentStreak < POWER_MODE_ACTIVATION_THRESHOLD) deactivatePowerMode();
+  debouncedEndStreak();
+}
+
+document.addEventListener("click", (e) => {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (!act) return;
+  const i = ORDER.indexOf(fx.key);
+  if (act === "prev") setVariant(ORDER[(i + ORDER.length - 1) % ORDER.length]);
+  else if (act === "next") setVariant(ORDER[(i + 1) % ORDER.length]);
+  else if (act === "hud") hud.hidden = !hud.hidden;
+  else if (act === "combo195") jumpCombo(195);
+  else if (act === "combo500") jumpCombo(500);
+  else if (act === "combo800") jumpCombo(800);
+  else if (act === "robo") toggleRobo(e.target);
+  else if (act === "resetLatency") { stats.latencies = []; stats.aceResizes = 0; stats.fullTextRenders = 0; stats.frameCostMax = 0; }
+  editor.focus();
+});
+$("#cap30").addEventListener("change", (e) => { cap30 = e.target.checked; editor.focus(); });
+$("#fakeReduced").addEventListener("change", (e) => { fakeReduced = e.target.checked; editor.focus(); });
+// ←/→ cycle variants only when the editor isn't focused (it usually is — use the arrows).
+document.addEventListener("keydown", (e) => {
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)) return;
+  if (e.key === "ArrowLeft") $('[data-act="prev"]').click();
+  if (e.key === "ArrowRight") $('[data-act="next"]').click();
+});
+
+setVariant(new URLSearchParams(location.search).get("variant") || "A");
+</script>
+</body>
+</html>
