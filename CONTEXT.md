@@ -11,8 +11,12 @@ A person competing in a round, writing HTML/CSS blind in the Core Editor.
 _Avoid_: Participant, player, competitor
 
 **Organizer**:
-A person who prepares and runs a competition.
-_Avoid_: Admin, host (until a distinct host role is decided)
+A person who prepares a Competition: its Rounds, References and assets.
+_Avoid_: Admin
+
+**Host**:
+The person running a Competition live: starting Rounds, running the timer, opening voting. Usually an Organizer wearing a different hat.
+_Avoid_: MC, admin, moderator
 
 **Audience**:
 The people watching a competition, who see Contestants' screens but never their result before the Reveal.
@@ -20,9 +24,19 @@ _Avoid_: Spectators, viewers
 
 ### The game
 
+**Competition**:
+One event, made of several Heats and a Final.
+_Avoid_: Event, tournament
+
 **Round**:
-One timed challenge in which Contestants recreate the same Reference.
-_Avoid_: Challenge, heat, match
+One timed challenge in which Contestants recreate the same Reference. Every Heat and the Final is a Round.
+_Avoid_: Challenge, match
+
+**Heat**:
+A qualifying Round; each Heat has its own Reference.
+
+**Final**:
+The last Round of a Competition, contested by Heat winners, with its own Reference.
 
 **Reference**:
 The screenshot of the target page Contestants must recreate.
@@ -48,3 +62,7 @@ _Avoid_: App, client
 **Enhancement**:
 Any capability layered on top of the Core Editor (preparation tooling, audience participation) whose absence or failure the Contestant never notices.
 _Avoid_: Plugin, add-on, online mode
+
+**Stage**:
+The separate screen at the venue showing shared Competition state — the timer, voting — rather than any one Contestant's editor.
+_Avoid_: Projector view, dashboard, scoreboard
