@@ -53,6 +53,10 @@ _Avoid_: Target, page.png, design
 The moment a Contestant's code is rendered for the first time, at the end of a Round.
 _Avoid_: Finish, result, preview
 
+**Vote**:
+One Audience member's single pick from the Current Round's Roster, cast after the Reveals; the tally advises the Host, who announces the winner.
+_Avoid_: Score, rating, ballot
+
 **Combo**:
 The running count of a Contestant's consecutive insertions, reset after a pause.
 _Avoid_: Streak, score
