@@ -1,0 +1,3155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Stage and Host console</title>
+<!--
+  PROTOTYPE — throwaway. Wayfinder ticket: "What do the Stage display and Host console look like?" (#13)
+  Three Host console variants x three Stage variants, switchable independently:
+    ?host=A|B|C   (← / → cycle)            ?stage=A|B|C   (Shift+← / Shift+→ cycle)
+    ?view=split|host|stage                 (split is the default; stage = full-window Stage)
+  Host A — Control desk   (laptop: rail of Rounds, one Round at a time, stepper + Roster table)
+  Host B — Remote         (phone: one big contextual button, Round picker, collapsible Roster)
+  Host C — Rounds board   (laptop: every Round as a column of its Roster, transport bar on top)
+  Stage A — Giant clock   (timer dominates; small join corner; ranking shown all at once)
+  Stage B — Join sidebar  (permanent QR sidebar; ranking revealed last-to-first)
+  Stage C — Name tiles    (Roster as tiles, draining time bar; results as columns in seat order)
+  Real: the lifecycle rules from the session-model and voting decisions, tally/ties, stale-Revision flag,
+        timer from an absolute endsAt (survives a Host or Stage disconnect), QR codes (inlined qrcode-generator, MIT).
+  Fake: the Durable Object, WebSockets, laptops and phones — all in-memory, driven by the venue simulator.
+  No persistence: a reload resets to the seeded mid-event state.
+-->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: #0e0e11; color: #e9e9ee; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .mono, code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  /* ---------- page layout (prototype chrome) ---------- */
+  #app { height: 100vh; display: grid; }
+  #app.split { grid-template-columns: minmax(0, 1fr) minmax(440px, 44%); }
+  #app.host { grid-template-columns: minmax(0, 1fr) 360px; }
+  #app.stage { grid-template-columns: 1fr; }
+  .pane { overflow: auto; min-height: 0; }
+  #hostpane { background: #16171b; position: relative; }
+  #rightpane { background: #08080a; border-left: 1px solid #ffffff14; display: flex; flex-direction: column; gap: 12px; padding: 12px 12px 90px; }
+  #app.stage #rightpane { padding: 0; border: 0; }
+  .frame-label { font: 600 11px system-ui; letter-spacing: .08em; text-transform: uppercase; color: #8a8a96; display: flex; justify-content: space-between; }
+  .stage-frame { position: relative; overflow: hidden; background: #000; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; outline: 1px solid #ffffff1c; }
+  #app.stage .stage-frame { aspect-ratio: auto; height: 100vh; border-radius: 0; outline: 0; }
+  .st-scale { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+
+  #switcher { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 6px;
+    background: #d4ff00; color: #111; border-radius: 999px; padding: 5px; box-shadow: 0 6px 24px #000a; font: 600 13px system-ui; white-space: nowrap; }
+  #switcher .seg { display: flex; align-items: center; background: #0000000d; border-radius: 999px; }
+  #switcher button { background: transparent; border: 0; border-radius: 999px; padding: 5px 10px; }
+  #switcher button:hover { background: #0000001a; }
+  #switcher button.on { background: #111; color: #d4ff00; }
+  #switcher .label { padding: 0 6px; min-width: 150px; text-align: center; }
+  #statepanel { position: fixed; left: 12px; top: 12px; bottom: 70px; width: min(480px, 46vw); z-index: 99; background: #000e; color: #b5f5c8;
+    border: 1px solid #d4ff0055; border-radius: 10px; padding: 12px; overflow: auto; font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; display: none; }
+  #statepanel.open { display: block; }
+  #statepanel h4 { color: #d4ff00; margin: 0 0 4px; font-size: 11px; }
+
+  /* ---------- venue simulator (prototype only) ---------- */
+  .sim { background: #1b1c12; border: 1px dashed #d4ff0066; border-radius: 10px; padding: 10px 12px; font-size: 13px; color: #e8ecd0; }
+  .sim h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #d4ff00; }
+  .sim .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 0; border-top: 1px solid #ffffff0d; }
+  .sim .row > b { width: 74px; color: #b9bf9a; font-weight: 600; font-size: 12px; }
+  .sim button, .sim select { background: #2b2d1d; border: 1px solid #d4ff0033; border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+  .sim button:hover { border-color: #d4ff00aa; }
+  .sim button.on { background: #d4ff00; color: #111; }
+  .sim button:disabled { opacity: .35; cursor: not-allowed; }
+  .sim .note { color: #9da084; font-size: 12px; }
+  .sim .last { color: #9da084; font: 11px ui-monospace, Menlo, monospace; margin-top: 6px; }
+
+  dialog { background: #23242b; color: #e9e9ee; border: 1px solid #ffffff22; border-radius: 12px; padding: 18px 20px; width: min(440px, 92vw); box-shadow: 0 20px 60px #000c; }
+  dialog::backdrop { background: #0008; }
+  dialog h3 { margin: 0 0 8px; font-size: 17px; }
+  dialog p { margin: 0 0 16px; color: #b7b7c2; }
+  dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 0; }
+
+  /* ---------- Host console: shared bits ---------- */
+  :root { --bg: #16171b; --panel: #1f2026; --line: #ffffff14; --muted: #9a9aa5; --accent: #ff3e8a; --ok: #43d17a; --warn: #ffb547; --danger: #ff5a4f; }
+  .host { min-height: 100%; position: relative; }
+  .host .muted { color: var(--muted); } .host .warn { color: var(--warn); }
+  .btn { border: 1px solid #ffffff26; background: #2a2b33; border-radius: 8px; padding: 7px 13px; font-weight: 600; }
+  .btn:hover { border-color: #ffffff55; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { background: transparent; border-color: #ff5a4f88; color: #ff8a82; }
+  .btn.ghost { background: transparent; }
+  .btn.sm { padding: 3px 9px; font-size: 12px; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .host.offline [data-act], .host.offline [data-change], .host.offline input { pointer-events: none; opacity: .35; }
+  .offline-banner { position: sticky; top: 0; z-index: 5; background: #5a2a00; color: #ffd6a3; padding: 8px 14px; font-weight: 600; font-size: 13px; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; background: #ffffff14; white-space: nowrap; vertical-align: middle; }
+  .chip.ph-upcoming { background: #2c3d66; color: #b9cdff; } .chip.ph-running { background: #164d2e; color: #8ff0b4; }
+  .chip.ph-timesup { background: #5c3a0c; color: #ffd08a; } .chip.ph-voting { background: #5a1840; color: #ffaad6; }
+  .chip.ph-results { background: #4d4410; color: #ffe680; } .chip.ph-idle { background: #ffffff14; color: #ccc; }
+  .chip.stale { background: #5c3a0c; color: #ffd08a; } .chip.hand { background: #2c3d66; color: #b9cdff; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); vertical-align: middle; }
+  .dot.off { background: #666; } .dot.hand { background: transparent; border: 1.5px dashed #8aa0ff; }
+  .clock { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .clock.last-min { color: #ffb547; } .clock.last-ten { color: #ff5a4f; }
+  .bar { height: 8px; background: #ffffff10; border-radius: 4px; overflow: hidden; } .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .lead .bar > i { background: #ffd23e; }
+  .addrow { display: flex; gap: 6px; } .addrow input { flex: 1; min-width: 0; background: #111216; border: 1px solid #ffffff22; border-radius: 8px; padding: 6px 9px; }
+  .x { background: none; border: 0; color: #8a8a96; padding: 2px 6px; border-radius: 6px; } .x:hover { color: #ff8a82; background: #ff5a4f1a; }
+  .claim { max-width: 460px; margin: 60px auto; background: #1f2026; border: 1px solid #ffffff14; border-radius: 14px; padding: 22px; }
+  .claim h2 { margin: 0 0 4px; } .claim dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0; font-size: 13px; }
+  .claim dt { color: #9a9aa5; } .claim dd { margin: 0; }
+  .claim input { width: 100%; background: #111216; border: 1px solid #ffffff22; border-radius: 8px; padding: 9px 11px; margin: 6px 0 12px; }
+  .claim .err { color: #ff8a82; font-size: 13px; margin: -6px 0 10px; }
+
+  /* Host A — Control desk */
+  .hA-top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: #1a1b20; }
+  .hA-top .brand { font-weight: 800; } .hA-top .sp { flex: 1; }
+  .hA-body { display: grid; grid-template-columns: 230px 1fr; min-height: calc(100vh - 47px); }
+  .hA-rail { border-right: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .rail-h { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 4px 6px; }
+  .rail-item { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 9px; display: grid; gap: 2px; }
+  .rail-item:hover { background: #ffffff08; } .rail-item.on { background: #ff3e8a1c; border-color: #ff3e8a66; }
+  .rail-item small { color: var(--muted); font-size: 12px; }
+  .hA-main { padding: 18px 22px 100px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+  .hA-head { display: flex; align-items: center; gap: 10px; } .hA-head h1 { margin: 0; font-size: 26px; }
+  .stepper { display: flex; gap: 4px; } .stepper span { flex: 1; text-align: center; padding: 6px 4px; font-size: 12px; font-weight: 600; border-radius: 6px; background: #ffffff08; color: #6d6d78; }
+  .stepper span.done { color: #b7b7c2; background: #ffffff10; } .stepper span.now { background: var(--accent); color: #fff; }
+  .hA-ctl { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .hA-ctl .clock { font-size: 56px; line-height: 1; min-width: 190px; }
+  .hA-ctl .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .hA-ctl .hint { flex-basis: 100%; color: var(--muted); font-size: 13px; }
+  .dur { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  .dur input { width: 64px; background: #111216; border: 1px solid #ffffff22; border-radius: 8px; padding: 6px 8px; text-align: right; }
+  .hA-sec h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; display: flex; gap: 10px; align-items: baseline; }
+  table.roster { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  table.roster td, table.roster th { padding: 8px 12px; border-top: 1px solid var(--line); text-align: left; vertical-align: middle; }
+  table.roster th { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-top: 0; }
+  table.roster tr.off td.nm { color: #777; } table.roster td.w { width: 34%; } table.roster td.n { width: 1%; text-align: right; font-weight: 700; }
+  table.roster tr.lead td.nm { color: #ffd23e; font-weight: 700; }
+
+  /* Host B — Remote (phone) */
+  .phone { width: 390px; height: 820px; margin: 18px auto 90px; border: 12px solid #000; border-radius: 46px; overflow: auto; box-shadow: 0 0 0 2px #333, 0 20px 50px #000a; background: var(--bg); }
+  #app.host .phone { height: auto; min-height: 820px; }
+  .hB { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 24px; min-height: 100%; }
+  .hB header { display: flex; align-items: center; gap: 8px; }
+  .hB header select { flex: 1; background: #2a2b33; border: 1px solid #ffffff22; border-radius: 10px; padding: 9px 10px; font-weight: 700; font-size: 16px; }
+  .hB-hero { text-align: center; padding: 16px 0 6px; } .hB-hero .clock { font-size: 84px; line-height: 1; margin: 8px 0 4px; }
+  .hB-hero .rn { font-size: 13px; color: var(--muted); }
+  .hB-hint { text-align: center; color: var(--muted); font-size: 13px; margin-top: -6px; }
+  .hB-primary { width: 100%; padding: 20px; border-radius: 16px; border: 0; background: var(--accent); color: #fff; font-size: 20px; font-weight: 800; }
+  .hB-sec { display: flex; gap: 8px; } .hB-sec .btn { flex: 1; padding: 12px; font-size: 15px; }
+  .hB-dur { display: flex; align-items: center; justify-content: center; gap: 14px; } .hB-dur .btn { width: 52px; height: 44px; font-size: 20px; }
+  .hB-dur b { font-size: 18px; min-width: 70px; text-align: center; }
+  .hB-tally { display: grid; gap: 8px; background: var(--panel); border-radius: 12px; padding: 12px; }
+  .hB-tally .r { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; } .hB-tally .r .bar { grid-column: 1 / -1; }
+  .hB-tally .lead b { color: #ffd23e; }
+  .hB details { background: var(--panel); border-radius: 12px; padding: 10px 12px; }
+  .hB summary { font-weight: 700; cursor: pointer; } .hB summary small { font-weight: 400; color: var(--muted); }
+  .hB li { list-style: none; display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .hB ul { margin: 8px 0; padding: 0; } .hB li .nm { flex: 1; } .hB li.off .nm { color: #777; }
+  .hB footer { margin-top: auto; text-align: center; color: var(--muted); font-size: 12px; }
+
+  /* Host C — Rounds board */
+  .hC-transport { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; background: #1d1e24; border-bottom: 1px solid var(--line); }
+  .hC-transport .now { display: grid; gap: 2px; min-width: 150px; } .hC-transport .now small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .hC-transport .now b { font-size: 18px; }
+  .hC-transport .clock { font-size: 38px; line-height: 1; min-width: 140px; }
+  .hC-transport .sp { flex: 1; } .hC-transport .meta { color: var(--muted); font-size: 12px; text-align: right; }
+  .hC-tbar { height: 4px; background: #ffffff10; } .hC-tbar > i { display: block; height: 100%; background: var(--accent); transform-origin: 0 50%; }
+  .hC-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 10px; padding: 14px 16px 100px; overflow-x: auto; align-items: start; }
+  .col { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 8px; }
+  .col.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: #251b22; }
+  .col h3 { margin: 0; font-size: 16px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; } .col .cst { font-size: 12px; color: var(--muted); }
+  .card { background: #ffffff08; border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 8px; align-items: center; }
+  .card.off .nm { color: #777; } .card .bar { grid-column: 1 / -1; } .card.lead { border-color: #ffd23e88; } .card.lead .nm { color: #ffd23e; font-weight: 700; }
+  .card .n { font-weight: 800; }
+  .col .empty { color: #6d6d78; font-size: 12px; text-align: center; padding: 10px 0; }
+
+  /* ---------- Stage: shared (1920 x 1080 logical px) ---------- */
+  .st { position: absolute; inset: 0; background: #07070a; color: #f2f2f2; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow: hidden; }
+  .st .pink { color: #ff3e8a; } .st .cyan { color: #3ee6ff; } .st .gold { color: #ffd23e; }
+  .st .kicker { font-size: 34px; letter-spacing: .3em; text-transform: uppercase; color: #3ee6ff; }
+  .st .clock.last-min { color: #ffb547; } .st .clock.last-ten { color: #ff3e8a; animation: throb 1s infinite; }
+  @keyframes throb { 50% { opacity: .55; } }
+  .st .qr { display: block; border-radius: 10px; }
+  .st-offline { position: absolute; right: 22px; top: 14px; font: 600 26px system-ui; color: #ffb547; display: flex; gap: 8px; align-items: center; opacity: .8; }
+  .st-offline i { width: 12px; height: 12px; border-radius: 50%; background: #ffb547; animation: throb 1s infinite; }
+  .st-wait { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 24px; }
+  .st-wait .big { font-size: 110px; font-weight: 800; }
+  .st-wait .sub { font-size: 40px; color: #8a8a96; font-family: system-ui; }
+  .tiebadge { display: inline-block; background: #ffd23e; color: #111; font-weight: 800; padding: 4px 18px; border-radius: 10px; font-size: 32px; letter-spacing: .1em; }
+
+  /* Stage A — Giant clock */
+  .stA-top { position: absolute; left: 70px; right: 70px; top: 50px; display: flex; justify-content: space-between; font-size: 40px; color: #8a8a96; }
+  .stA-top b { color: #f2f2f2; }
+  .stA-center { position: absolute; left: 70px; right: 70px; top: 140px; bottom: 230px; display: grid; place-content: center; text-align: center; gap: 10px; }
+  .stA-clock { font-size: 440px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+  .stA-huge { font-size: 170px; font-weight: 800; line-height: 1.05; }
+  .stA-sub { font-size: 48px; color: #b7b7c2; font-family: system-ui; }
+  .stA-dur { font-size: 120px; color: #555; font-weight: 700; }
+  .stA-bottom { position: absolute; left: 70px; right: 70px; bottom: 50px; height: 170px; display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; }
+  .stA-names { font-size: 44px; color: #d0d0d8; display: flex; flex-wrap: wrap; gap: 8px 34px; align-self: center; font-family: system-ui; font-weight: 600; }
+  .stA-names span::before { content: "● "; color: #ff3e8a; font-size: 26px; vertical-align: middle; }
+  .stA-join { display: flex; align-items: center; gap: 22px; font-size: 30px; color: #b7b7c2; text-align: right; }
+  .stA-join b { display: block; font-size: 54px; color: #f2f2f2; letter-spacing: .12em; }
+  .stA-vote { display: flex; align-items: center; gap: 90px; text-align: left; }
+  .stA-vote .count { font-size: 300px; font-weight: 800; line-height: .9; }
+  .stA-welcome { display: flex; align-items: center; gap: 100px; text-align: left; }
+  .stA-rank { width: 1500px; display: grid; gap: 18px; text-align: left; }
+  .stA-rank .r { display: grid; grid-template-columns: 90px 420px 1fr 120px; align-items: center; gap: 24px; font-size: 56px; font-family: system-ui; font-weight: 700; }
+  .stA-rank .r .pos { color: #666; font-family: ui-monospace, Menlo, monospace; } .stA-rank .r .n { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .stA-rank .r .b { height: 46px; background: #ffffff10; border-radius: 8px; overflow: hidden; } .stA-rank .r .b i { display: block; height: 100%; background: #ff3e8a; border-radius: 8px; }
+  .stA-rank .r.lead { color: #ffd23e; } .stA-rank .r.lead .b i { background: #ffd23e; } .stA-rank .r.lead .pos { color: #ffd23e; }
+
+  /* Stage B — Join sidebar */
+  .stB-main { position: absolute; left: 0; top: 0; bottom: 0; width: 1340px; padding: 70px 80px; display: flex; flex-direction: column; }
+  .stB-side { position: absolute; right: 0; top: 0; bottom: 0; width: 580px; background: #111118; border-left: 4px solid #ff3e8a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; text-align: center; padding: 40px; }
+  .stB-side .t { font-size: 46px; font-weight: 800; font-family: system-ui; }
+  .stB-side .u { font-size: 30px; color: #b7b7c2; } .stB-side .code { font-size: 86px; font-weight: 800; letter-spacing: .14em; color: #3ee6ff; }
+  .stB-side .ph { font-size: 28px; color: #8a8a96; font-family: system-ui; }
+  .stB-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 40px; color: #8a8a96; }
+  .stB-head b { color: #f2f2f2; font-size: 64px; }
+  .stB-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
+  .stB-clock { font-size: 330px; font-weight: 800; line-height: 1; }
+  .stB-big { font-size: 150px; font-weight: 800; line-height: 1.05; }
+  .stB-sub { font-size: 46px; color: #b7b7c2; font-family: system-ui; }
+  .stB-names { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 40px; font-size: 46px; font-family: system-ui; font-weight: 600; color: #d0d0d8; }
+  .stB-rank { display: grid; gap: 14px; }
+  .stB-rank .r { display: grid; grid-template-columns: 80px 1fr 120px; align-items: center; gap: 20px; font-size: 58px; font-family: system-ui; font-weight: 700;
+    padding: 10px 26px; border-radius: 14px; background: #ffffff08; opacity: 0; transform: translateY(30px); animation: rise .6s ease-out forwards; }
+  .stB-rank .r .pos { color: #666; font-family: ui-monospace, Menlo, monospace; } .stB-rank .r .n { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .stB-rank .r.lead { background: #ffd23e; color: #111; transform: scale(.8); animation: crown .8s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+  .stB-rank .r.lead .pos { color: #111; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @keyframes crown { 0% { opacity: 0; transform: scale(.6); } 100% { opacity: 1; transform: scale(1); } }
+
+  /* Stage C — Name tiles */
+  .stC-bar { position: absolute; left: 0; right: 0; top: 0; height: 30px; background: #ffffff10; }
+  .stC-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff3e8a, #3ee6ff); transform-origin: 0 50%; }
+  .stC-head { position: absolute; left: 70px; right: 70px; top: 70px; display: flex; justify-content: space-between; align-items: center; }
+  .stC-head .rn { font-size: 80px; font-weight: 800; } .stC-head .rn small { display: block; font-size: 34px; color: #3ee6ff; letter-spacing: .3em; text-transform: uppercase; font-weight: 400; }
+  .stC-head .clock { font-size: 170px; line-height: 1; }
+  .stC-tiles { position: absolute; left: 70px; right: 70px; top: 290px; bottom: 210px; display: flex; gap: 28px; align-items: stretch; justify-content: center; }
+  .tile { flex: 1; max-width: 360px; border: 3px solid #ffffff22; border-radius: 22px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 24px 14px; position: relative; background: #ffffff06; overflow: hidden; }
+  .tile .nm { font: 700 50px system-ui; text-align: center; position: relative; z-index: 1; }
+  .tile .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #ff3e8a55; animation: grow 1.6s ease-out; }
+  .tile .n { position: relative; z-index: 1; font-size: 90px; font-weight: 800; margin-bottom: auto; }
+  .tile.lead { border-color: #ffd23e; } .tile.lead .fill { background: #ffd23e88; } .tile.lead .n { color: #ffd23e; }
+  .tile .crown { font-size: 64px; position: relative; z-index: 1; margin-bottom: 4px; }
+  .tile.q .nm { opacity: .5; }
+  @keyframes grow { from { height: 0; } }
+  .stC-mid { position: absolute; left: 70px; right: 70px; top: 290px; bottom: 210px; display: grid; place-content: center; text-align: center; gap: 20px; }
+  .stC-mid .big { font-size: 170px; font-weight: 800; line-height: 1; }
+  .stC-mid .sub { font-size: 48px; color: #b7b7c2; font-family: system-ui; }
+  .stC-overlay { position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%); background: #07070af2; border: 4px solid #ff3e8a; border-radius: 34px; padding: 50px 120px; text-align: center; z-index: 2; }
+  .stC-overlay .big { font-size: 220px; line-height: 1; font-weight: 800; } .stC-overlay .sub { font-size: 44px; color: #b7b7c2; font-family: system-ui; }
+  .stC-foot { position: absolute; left: 0; right: 0; bottom: 0; height: 170px; background: #111118; border-top: 3px solid #ffffff14; display: flex; align-items: center; justify-content: center; gap: 40px; font-size: 44px; }
+  .stC-foot b { color: #3ee6ff; letter-spacing: .14em; font-size: 64px; }
+  .stC-foot .qr { width: 140px; height: 140px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="switcher"></div>
+<div id="statepanel"></div>
+<dialog id="dlg"><form method="dialog"><h3></h3><p></p><menu><button class="btn ghost" value="cancel">Cancel</button><button class="btn primary" value="ok">OK</button></menu></form></dialog>
+
+<script>
+// qrcode-generator 1.4.4 — Copyright (c) 2009 Kazuhiko Arase — MIT license (inlined so the prototype works offline)
+//---------------------------------------------------------------------
+//
+// QR Code Generator for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//  http://www.opensource.org/licenses/mit-license.php
+//
+// The word 'QR Code' is registered trademark of
+// DENSO WAVE INCORPORATED
+//  http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+
+var qrcode = function() {
+
+  //---------------------------------------------------------------------
+  // qrcode
+  //---------------------------------------------------------------------
+
+  /**
+   * qrcode
+   * @param typeNumber 1 to 40
+   * @param errorCorrectionLevel 'L','M','Q','H'
+   */
+  var qrcode = function(typeNumber, errorCorrectionLevel) {
+
+    var PAD0 = 0xEC;
+    var PAD1 = 0x11;
+
+    var _typeNumber = typeNumber;
+    var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+    var _modules = null;
+    var _moduleCount = 0;
+    var _dataCache = null;
+    var _dataList = [];
+
+    var _this = {};
+
+    var makeImpl = function(test, maskPattern) {
+
+      _moduleCount = _typeNumber * 4 + 17;
+      _modules = function(moduleCount) {
+        var modules = new Array(moduleCount);
+        for (var row = 0; row < moduleCount; row += 1) {
+          modules[row] = new Array(moduleCount);
+          for (var col = 0; col < moduleCount; col += 1) {
+            modules[row][col] = null;
+          }
+        }
+        return modules;
+      }(_moduleCount);
+
+      setupPositionProbePattern(0, 0);
+      setupPositionProbePattern(_moduleCount - 7, 0);
+      setupPositionProbePattern(0, _moduleCount - 7);
+      setupPositionAdjustPattern();
+      setupTimingPattern();
+      setupTypeInfo(test, maskPattern);
+
+      if (_typeNumber >= 7) {
+        setupTypeNumber(test);
+      }
+
+      if (_dataCache == null) {
+        _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+      }
+
+      mapData(_dataCache, maskPattern);
+    };
+
+    var setupPositionProbePattern = function(row, col) {
+
+      for (var r = -1; r <= 7; r += 1) {
+
+        if (row + r <= -1 || _moduleCount <= row + r) continue;
+
+        for (var c = -1; c <= 7; c += 1) {
+
+          if (col + c <= -1 || _moduleCount <= col + c) continue;
+
+          if ( (0 <= r && r <= 6 && (c == 0 || c == 6) )
+              || (0 <= c && c <= 6 && (r == 0 || r == 6) )
+              || (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+            _modules[row + r][col + c] = true;
+          } else {
+            _modules[row + r][col + c] = false;
+          }
+        }
+      }
+    };
+
+    var getBestMaskPattern = function() {
+
+      var minLostPoint = 0;
+      var pattern = 0;
+
+      for (var i = 0; i < 8; i += 1) {
+
+        makeImpl(true, i);
+
+        var lostPoint = QRUtil.getLostPoint(_this);
+
+        if (i == 0 || minLostPoint > lostPoint) {
+          minLostPoint = lostPoint;
+          pattern = i;
+        }
+      }
+
+      return pattern;
+    };
+
+    var setupTimingPattern = function() {
+
+      for (var r = 8; r < _moduleCount - 8; r += 1) {
+        if (_modules[r][6] != null) {
+          continue;
+        }
+        _modules[r][6] = (r % 2 == 0);
+      }
+
+      for (var c = 8; c < _moduleCount - 8; c += 1) {
+        if (_modules[6][c] != null) {
+          continue;
+        }
+        _modules[6][c] = (c % 2 == 0);
+      }
+    };
+
+    var setupPositionAdjustPattern = function() {
+
+      var pos = QRUtil.getPatternPosition(_typeNumber);
+
+      for (var i = 0; i < pos.length; i += 1) {
+
+        for (var j = 0; j < pos.length; j += 1) {
+
+          var row = pos[i];
+          var col = pos[j];
+
+          if (_modules[row][col] != null) {
+            continue;
+          }
+
+          for (var r = -2; r <= 2; r += 1) {
+
+            for (var c = -2; c <= 2; c += 1) {
+
+              if (r == -2 || r == 2 || c == -2 || c == 2
+                  || (r == 0 && c == 0) ) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    var setupTypeNumber = function(test) {
+
+      var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+      }
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
+    };
+
+    var setupTypeInfo = function(test, maskPattern) {
+
+      var data = (_errorCorrectionLevel << 3) | maskPattern;
+      var bits = QRUtil.getBCHTypeInfo(data);
+
+      // vertical
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 6) {
+          _modules[i][8] = mod;
+        } else if (i < 8) {
+          _modules[i + 1][8] = mod;
+        } else {
+          _modules[_moduleCount - 15 + i][8] = mod;
+        }
+      }
+
+      // horizontal
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 8) {
+          _modules[8][_moduleCount - i - 1] = mod;
+        } else if (i < 9) {
+          _modules[8][15 - i - 1 + 1] = mod;
+        } else {
+          _modules[8][15 - i - 1] = mod;
+        }
+      }
+
+      // fixed module
+      _modules[_moduleCount - 8][8] = (!test);
+    };
+
+    var mapData = function(data, maskPattern) {
+
+      var inc = -1;
+      var row = _moduleCount - 1;
+      var bitIndex = 7;
+      var byteIndex = 0;
+      var maskFunc = QRUtil.getMaskFunction(maskPattern);
+
+      for (var col = _moduleCount - 1; col > 0; col -= 2) {
+
+        if (col == 6) col -= 1;
+
+        while (true) {
+
+          for (var c = 0; c < 2; c += 1) {
+
+            if (_modules[row][col - c] == null) {
+
+              var dark = false;
+
+              if (byteIndex < data.length) {
+                dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
+              }
+
+              var mask = maskFunc(row, col - c);
+
+              if (mask) {
+                dark = !dark;
+              }
+
+              _modules[row][col - c] = dark;
+              bitIndex -= 1;
+
+              if (bitIndex == -1) {
+                byteIndex += 1;
+                bitIndex = 7;
+              }
+            }
+          }
+
+          row += inc;
+
+          if (row < 0 || _moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+    };
+
+    var createBytes = function(buffer, rsBlocks) {
+
+      var offset = 0;
+
+      var maxDcCount = 0;
+      var maxEcCount = 0;
+
+      var dcdata = new Array(rsBlocks.length);
+      var ecdata = new Array(rsBlocks.length);
+
+      for (var r = 0; r < rsBlocks.length; r += 1) {
+
+        var dcCount = rsBlocks[r].dataCount;
+        var ecCount = rsBlocks[r].totalCount - dcCount;
+
+        maxDcCount = Math.max(maxDcCount, dcCount);
+        maxEcCount = Math.max(maxEcCount, ecCount);
+
+        dcdata[r] = new Array(dcCount);
+
+        for (var i = 0; i < dcdata[r].length; i += 1) {
+          dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
+        }
+        offset += dcCount;
+
+        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+        var modPoly = rawPoly.mod(rsPoly);
+        ecdata[r] = new Array(rsPoly.getLength() - 1);
+        for (var i = 0; i < ecdata[r].length; i += 1) {
+          var modIndex = i + modPoly.getLength() - ecdata[r].length;
+          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
+        }
+      }
+
+      var totalCodeCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalCodeCount += rsBlocks[i].totalCount;
+      }
+
+      var data = new Array(totalCodeCount);
+      var index = 0;
+
+      for (var i = 0; i < maxDcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < dcdata[r].length) {
+            data[index] = dcdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      for (var i = 0; i < maxEcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < ecdata[r].length) {
+            data[index] = ecdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      return data;
+    };
+
+    var createData = function(typeNumber, errorCorrectionLevel, dataList) {
+
+      var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectionLevel);
+
+      var buffer = qrBitBuffer();
+
+      for (var i = 0; i < dataList.length; i += 1) {
+        var data = dataList[i];
+        buffer.put(data.getMode(), 4);
+        buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+        data.write(buffer);
+      }
+
+      // calc num max data.
+      var totalDataCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalDataCount += rsBlocks[i].dataCount;
+      }
+
+      if (buffer.getLengthInBits() > totalDataCount * 8) {
+        throw 'code length overflow. ('
+          + buffer.getLengthInBits()
+          + '>'
+          + totalDataCount * 8
+          + ')';
+      }
+
+      // end code
+      if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+        buffer.put(0, 4);
+      }
+
+      // padding
+      while (buffer.getLengthInBits() % 8 != 0) {
+        buffer.putBit(false);
+      }
+
+      // padding
+      while (true) {
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD0, 8);
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD1, 8);
+      }
+
+      return createBytes(buffer, rsBlocks);
+    };
+
+    _this.addData = function(data, mode) {
+
+      mode = mode || 'Byte';
+
+      var newData = null;
+
+      switch(mode) {
+      case 'Numeric' :
+        newData = qrNumber(data);
+        break;
+      case 'Alphanumeric' :
+        newData = qrAlphaNum(data);
+        break;
+      case 'Byte' :
+        newData = qr8BitByte(data);
+        break;
+      case 'Kanji' :
+        newData = qrKanji(data);
+        break;
+      default :
+        throw 'mode:' + mode;
+      }
+
+      _dataList.push(newData);
+      _dataCache = null;
+    };
+
+    _this.isDark = function(row, col) {
+      if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+        throw row + ',' + col;
+      }
+      return _modules[row][col];
+    };
+
+    _this.getModuleCount = function() {
+      return _moduleCount;
+    };
+
+    _this.make = function() {
+      if (_typeNumber < 1) {
+        var typeNumber = 1;
+
+        for (; typeNumber < 40; typeNumber++) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
+          var buffer = qrBitBuffer();
+
+          for (var i = 0; i < _dataList.length; i++) {
+            var data = _dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+            data.write(buffer);
+          }
+
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i++) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+
+          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+            break;
+          }
+        }
+
+        _typeNumber = typeNumber;
+      }
+
+      makeImpl(false, getBestMaskPattern() );
+    };
+
+    _this.createTableTag = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var qrHtml = '';
+
+      qrHtml += '<table style="';
+      qrHtml += ' border-width: 0px; border-style: none;';
+      qrHtml += ' border-collapse: collapse;';
+      qrHtml += ' padding: 0px; margin: ' + margin + 'px;';
+      qrHtml += '">';
+      qrHtml += '<tbody>';
+
+      for (var r = 0; r < _this.getModuleCount(); r += 1) {
+
+        qrHtml += '<tr>';
+
+        for (var c = 0; c < _this.getModuleCount(); c += 1) {
+          qrHtml += '<td style="';
+          qrHtml += ' border-width: 0px; border-style: none;';
+          qrHtml += ' border-collapse: collapse;';
+          qrHtml += ' padding: 0px; margin: 0px;';
+          qrHtml += ' width: ' + cellSize + 'px;';
+          qrHtml += ' height: ' + cellSize + 'px;';
+          qrHtml += ' background-color: ';
+          qrHtml += _this.isDark(r, c)? '#000000' : '#ffffff';
+          qrHtml += ';';
+          qrHtml += '"/>';
+        }
+
+        qrHtml += '</tr>';
+      }
+
+      qrHtml += '</tbody>';
+      qrHtml += '</table>';
+
+      return qrHtml;
+    };
+
+    _this.createSvgTag = function(cellSize, margin, alt, title) {
+
+      var opts = {};
+      if (typeof arguments[0] == 'object') {
+        // Called by options.
+        opts = arguments[0];
+        // overwrite cellSize and margin.
+        cellSize = opts.cellSize;
+        margin = opts.margin;
+        alt = opts.alt;
+        title = opts.title;
+      }
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      // Compose alt property surrogate
+      alt = (typeof alt === 'string') ? {text: alt} : alt || {};
+      alt.text = alt.text || null;
+      alt.id = (alt.text) ? alt.id || 'qrcode-description' : null;
+
+      // Compose title property surrogate
+      title = (typeof title === 'string') ? {text: title} : title || {};
+      title.text = title.text || null;
+      title.id = (title.text) ? title.id || 'qrcode-title' : null;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var c, mc, r, mr, qrSvg='', rect;
+
+      rect = 'l' + cellSize + ',0 0,' + cellSize +
+        ' -' + cellSize + ',0 0,-' + cellSize + 'z ';
+
+      qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+      qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : '';
+      qrSvg += ' viewBox="0 0 ' + size + ' ' + size + '" ';
+      qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+      qrSvg += (title.text || alt.text) ? ' role="img" aria-labelledby="' +
+          escapeXml([title.id, alt.id].join(' ').trim() ) + '"' : '';
+      qrSvg += '>';
+      qrSvg += (title.text) ? '<title id="' + escapeXml(title.id) + '">' +
+          escapeXml(title.text) + '</title>' : '';
+      qrSvg += (alt.text) ? '<description id="' + escapeXml(alt.id) + '">' +
+          escapeXml(alt.text) + '</description>' : '';
+      qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+      qrSvg += '<path d="';
+
+      for (r = 0; r < _this.getModuleCount(); r += 1) {
+        mr = r * cellSize + margin;
+        for (c = 0; c < _this.getModuleCount(); c += 1) {
+          if (_this.isDark(r, c) ) {
+            mc = c*cellSize+margin;
+            qrSvg += 'M' + mc + ',' + mr + rect;
+          }
+        }
+      }
+
+      qrSvg += '" stroke="transparent" fill="black"/>';
+      qrSvg += '</svg>';
+
+      return qrSvg;
+    };
+
+    _this.createDataURL = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      return createDataURL(size, size, function(x, y) {
+        if (min <= x && x < max && min <= y && y < max) {
+          var c = Math.floor( (x - min) / cellSize);
+          var r = Math.floor( (y - min) / cellSize);
+          return _this.isDark(r, c)? 0 : 1;
+        } else {
+          return 1;
+        }
+      } );
+    };
+
+    _this.createImgTag = function(cellSize, margin, alt) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+
+      var img = '';
+      img += '<img';
+      img += '\u0020src="';
+      img += _this.createDataURL(cellSize, margin);
+      img += '"';
+      img += '\u0020width="';
+      img += size;
+      img += '"';
+      img += '\u0020height="';
+      img += size;
+      img += '"';
+      if (alt) {
+        img += '\u0020alt="';
+        img += escapeXml(alt);
+        img += '"';
+      }
+      img += '/>';
+
+      return img;
+    };
+
+    var escapeXml = function(s) {
+      var escaped = '';
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charAt(i);
+        switch(c) {
+        case '<': escaped += '&lt;'; break;
+        case '>': escaped += '&gt;'; break;
+        case '&': escaped += '&amp;'; break;
+        case '"': escaped += '&quot;'; break;
+        default : escaped += c; break;
+        }
+      }
+      return escaped;
+    };
+
+    var _createHalfASCII = function(margin) {
+      var cellSize = 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r1, r2, p;
+
+      var blocks = {
+        '██': '█',
+        '█ ': '▀',
+        ' █': '▄',
+        '  ': ' '
+      };
+
+      var blocksLastLineNoMargin = {
+        '██': '▀',
+        '█ ': '▀',
+        ' █': ' ',
+        '  ': ' '
+      };
+
+      var ascii = '';
+      for (y = 0; y < size; y += 2) {
+        r1 = Math.floor((y - min) / cellSize);
+        r2 = Math.floor((y + 1 - min) / cellSize);
+        for (x = 0; x < size; x += 1) {
+          p = '█';
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+            p = ' ';
+          }
+
+          if (min <= x && x < max && min <= y+1 && y+1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+            p += ' ';
+          }
+          else {
+            p += '█';
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          ascii += (margin < 1 && y+1 >= max) ? blocksLastLineNoMargin[p] : blocks[p];
+        }
+
+        ascii += '\n';
+      }
+
+      if (size % 2 && margin > 0) {
+        return ascii.substring(0, ascii.length - size - 1) + Array(size+1).join('▀');
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.createASCII = function(cellSize, margin) {
+      cellSize = cellSize || 1;
+
+      if (cellSize < 2) {
+        return _createHalfASCII(margin);
+      }
+
+      cellSize -= 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r, p;
+
+      var white = Array(cellSize+1).join('██');
+      var black = Array(cellSize+1).join('  ');
+
+      var ascii = '';
+      var line = '';
+      for (y = 0; y < size; y += 1) {
+        r = Math.floor( (y - min) / cellSize);
+        line = '';
+        for (x = 0; x < size; x += 1) {
+          p = 1;
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+            p = 0;
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          line += p ? white : black;
+        }
+
+        for (r = 0; r < cellSize; r += 1) {
+          ascii += line + '\n';
+        }
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.renderTo2dContext = function(context, cellSize) {
+      cellSize = cellSize || 2;
+      var length = _this.getModuleCount();
+      for (var row = 0; row < length; row++) {
+        for (var col = 0; col < length; col++) {
+          context.fillStyle = _this.isDark(row, col) ? 'black' : 'white';
+          context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrcode.stringToBytes
+  //---------------------------------------------------------------------
+
+  qrcode.stringToBytesFuncs = {
+    'default' : function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        bytes.push(c & 0xff);
+      }
+      return bytes;
+    }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['default'];
+
+  //---------------------------------------------------------------------
+  // qrcode.createStringToBytes
+  //---------------------------------------------------------------------
+
+  /**
+   * @param unicodeData base64 string of byte array.
+   * [16bit Unicode],[16bit Bytes], ...
+   * @param numChars
+   */
+  qrcode.createStringToBytes = function(unicodeData, numChars) {
+
+    // create conversion map.
+
+    var unicodeMap = function() {
+
+      var bin = base64DecodeInputStream(unicodeData);
+      var read = function() {
+        var b = bin.read();
+        if (b == -1) throw 'eof';
+        return b;
+      };
+
+      var count = 0;
+      var unicodeMap = {};
+      while (true) {
+        var b0 = bin.read();
+        if (b0 == -1) break;
+        var b1 = read();
+        var b2 = read();
+        var b3 = read();
+        var k = String.fromCharCode( (b0 << 8) | b1);
+        var v = (b2 << 8) | b3;
+        unicodeMap[k] = v;
+        count += 1;
+      }
+      if (count != numChars) {
+        throw count + ' != ' + numChars;
+      }
+
+      return unicodeMap;
+    }();
+
+    var unknownChar = '?'.charCodeAt(0);
+
+    return function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        if (c < 128) {
+          bytes.push(c);
+        } else {
+          var b = unicodeMap[s.charAt(i)];
+          if (typeof b == 'number') {
+            if ( (b & 0xff) == b) {
+              // 1byte
+              bytes.push(b);
+            } else {
+              // 2bytes
+              bytes.push(b >>> 8);
+              bytes.push(b & 0xff);
+            }
+          } else {
+            bytes.push(unknownChar);
+          }
+        }
+      }
+      return bytes;
+    };
+  };
+
+  //---------------------------------------------------------------------
+  // QRMode
+  //---------------------------------------------------------------------
+
+  var QRMode = {
+    MODE_NUMBER :    1 << 0,
+    MODE_ALPHA_NUM : 1 << 1,
+    MODE_8BIT_BYTE : 1 << 2,
+    MODE_KANJI :     1 << 3
+  };
+
+  //---------------------------------------------------------------------
+  // QRErrorCorrectionLevel
+  //---------------------------------------------------------------------
+
+  var QRErrorCorrectionLevel = {
+    L : 1,
+    M : 0,
+    Q : 3,
+    H : 2
+  };
+
+  //---------------------------------------------------------------------
+  // QRMaskPattern
+  //---------------------------------------------------------------------
+
+  var QRMaskPattern = {
+    PATTERN000 : 0,
+    PATTERN001 : 1,
+    PATTERN010 : 2,
+    PATTERN011 : 3,
+    PATTERN100 : 4,
+    PATTERN101 : 5,
+    PATTERN110 : 6,
+    PATTERN111 : 7
+  };
+
+  //---------------------------------------------------------------------
+  // QRUtil
+  //---------------------------------------------------------------------
+
+  var QRUtil = function() {
+
+    var PATTERN_POSITION_TABLE = [
+      [],
+      [6, 18],
+      [6, 22],
+      [6, 26],
+      [6, 30],
+      [6, 34],
+      [6, 22, 38],
+      [6, 24, 42],
+      [6, 26, 46],
+      [6, 28, 50],
+      [6, 30, 54],
+      [6, 32, 58],
+      [6, 34, 62],
+      [6, 26, 46, 66],
+      [6, 26, 48, 70],
+      [6, 26, 50, 74],
+      [6, 30, 54, 78],
+      [6, 30, 56, 82],
+      [6, 30, 58, 86],
+      [6, 34, 62, 90],
+      [6, 28, 50, 72, 94],
+      [6, 26, 50, 74, 98],
+      [6, 30, 54, 78, 102],
+      [6, 28, 54, 80, 106],
+      [6, 32, 58, 84, 110],
+      [6, 30, 58, 86, 114],
+      [6, 34, 62, 90, 118],
+      [6, 26, 50, 74, 98, 122],
+      [6, 30, 54, 78, 102, 126],
+      [6, 26, 52, 78, 104, 130],
+      [6, 30, 56, 82, 108, 134],
+      [6, 34, 60, 86, 112, 138],
+      [6, 30, 58, 86, 114, 142],
+      [6, 34, 62, 90, 118, 146],
+      [6, 30, 54, 78, 102, 126, 150],
+      [6, 24, 50, 76, 102, 128, 154],
+      [6, 28, 54, 80, 106, 132, 158],
+      [6, 32, 58, 84, 110, 136, 162],
+      [6, 26, 54, 82, 110, 138, 166],
+      [6, 30, 58, 86, 114, 142, 170]
+    ];
+    var G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+    var G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+    var G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+    var _this = {};
+
+    var getBCHDigit = function(data) {
+      var digit = 0;
+      while (data != 0) {
+        digit += 1;
+        data >>>= 1;
+      }
+      return digit;
+    };
+
+    _this.getBCHTypeInfo = function(data) {
+      var d = data << 10;
+      while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+        d ^= (G15 << (getBCHDigit(d) - getBCHDigit(G15) ) );
+      }
+      return ( (data << 10) | d) ^ G15_MASK;
+    };
+
+    _this.getBCHTypeNumber = function(data) {
+      var d = data << 12;
+      while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+        d ^= (G18 << (getBCHDigit(d) - getBCHDigit(G18) ) );
+      }
+      return (data << 12) | d;
+    };
+
+    _this.getPatternPosition = function(typeNumber) {
+      return PATTERN_POSITION_TABLE[typeNumber - 1];
+    };
+
+    _this.getMaskFunction = function(maskPattern) {
+
+      switch (maskPattern) {
+
+      case QRMaskPattern.PATTERN000 :
+        return function(i, j) { return (i + j) % 2 == 0; };
+      case QRMaskPattern.PATTERN001 :
+        return function(i, j) { return i % 2 == 0; };
+      case QRMaskPattern.PATTERN010 :
+        return function(i, j) { return j % 3 == 0; };
+      case QRMaskPattern.PATTERN011 :
+        return function(i, j) { return (i + j) % 3 == 0; };
+      case QRMaskPattern.PATTERN100 :
+        return function(i, j) { return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 == 0; };
+      case QRMaskPattern.PATTERN101 :
+        return function(i, j) { return (i * j) % 2 + (i * j) % 3 == 0; };
+      case QRMaskPattern.PATTERN110 :
+        return function(i, j) { return ( (i * j) % 2 + (i * j) % 3) % 2 == 0; };
+      case QRMaskPattern.PATTERN111 :
+        return function(i, j) { return ( (i * j) % 3 + (i + j) % 2) % 2 == 0; };
+
+      default :
+        throw 'bad maskPattern:' + maskPattern;
+      }
+    };
+
+    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+      var a = qrPolynomial([1], 0);
+      for (var i = 0; i < errorCorrectLength; i += 1) {
+        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
+      }
+      return a;
+    };
+
+    _this.getLengthInBits = function(mode, type) {
+
+      if (1 <= type && type < 10) {
+
+        // 1 - 9
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 10;
+        case QRMode.MODE_ALPHA_NUM : return 9;
+        case QRMode.MODE_8BIT_BYTE : return 8;
+        case QRMode.MODE_KANJI     : return 8;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 27) {
+
+        // 10 - 26
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 12;
+        case QRMode.MODE_ALPHA_NUM : return 11;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 10;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 41) {
+
+        // 27 - 40
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 14;
+        case QRMode.MODE_ALPHA_NUM : return 13;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 12;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else {
+        throw 'type:' + type;
+      }
+    };
+
+    _this.getLostPoint = function(qrcode) {
+
+      var moduleCount = qrcode.getModuleCount();
+
+      var lostPoint = 0;
+
+      // LEVEL1
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount; col += 1) {
+
+          var sameCount = 0;
+          var dark = qrcode.isDark(row, col);
+
+          for (var r = -1; r <= 1; r += 1) {
+
+            if (row + r < 0 || moduleCount <= row + r) {
+              continue;
+            }
+
+            for (var c = -1; c <= 1; c += 1) {
+
+              if (col + c < 0 || moduleCount <= col + c) {
+                continue;
+              }
+
+              if (r == 0 && c == 0) {
+                continue;
+              }
+
+              if (dark == qrcode.isDark(row + r, col + c) ) {
+                sameCount += 1;
+              }
+            }
+          }
+
+          if (sameCount > 5) {
+            lostPoint += (3 + sameCount - 5);
+          }
+        }
+      };
+
+      // LEVEL2
+
+      for (var row = 0; row < moduleCount - 1; row += 1) {
+        for (var col = 0; col < moduleCount - 1; col += 1) {
+          var count = 0;
+          if (qrcode.isDark(row, col) ) count += 1;
+          if (qrcode.isDark(row + 1, col) ) count += 1;
+          if (qrcode.isDark(row, col + 1) ) count += 1;
+          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (count == 0 || count == 4) {
+            lostPoint += 3;
+          }
+        }
+      }
+
+      // LEVEL3
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount - 6; col += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row, col + 1)
+              &&  qrcode.isDark(row, col + 2)
+              &&  qrcode.isDark(row, col + 3)
+              &&  qrcode.isDark(row, col + 4)
+              && !qrcode.isDark(row, col + 5)
+              &&  qrcode.isDark(row, col + 6) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount - 6; row += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row + 1, col)
+              &&  qrcode.isDark(row + 2, col)
+              &&  qrcode.isDark(row + 3, col)
+              &&  qrcode.isDark(row + 4, col)
+              && !qrcode.isDark(row + 5, col)
+              &&  qrcode.isDark(row + 6, col) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      // LEVEL4
+
+      var darkCount = 0;
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount; row += 1) {
+          if (qrcode.isDark(row, col) ) {
+            darkCount += 1;
+          }
+        }
+      }
+
+      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+      lostPoint += ratio * 10;
+
+      return lostPoint;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // QRMath
+  //---------------------------------------------------------------------
+
+  var QRMath = function() {
+
+    var EXP_TABLE = new Array(256);
+    var LOG_TABLE = new Array(256);
+
+    // initialize tables
+    for (var i = 0; i < 8; i += 1) {
+      EXP_TABLE[i] = 1 << i;
+    }
+    for (var i = 8; i < 256; i += 1) {
+      EXP_TABLE[i] = EXP_TABLE[i - 4]
+        ^ EXP_TABLE[i - 5]
+        ^ EXP_TABLE[i - 6]
+        ^ EXP_TABLE[i - 8];
+    }
+    for (var i = 0; i < 255; i += 1) {
+      LOG_TABLE[EXP_TABLE[i] ] = i;
+    }
+
+    var _this = {};
+
+    _this.glog = function(n) {
+
+      if (n < 1) {
+        throw 'glog(' + n + ')';
+      }
+
+      return LOG_TABLE[n];
+    };
+
+    _this.gexp = function(n) {
+
+      while (n < 0) {
+        n += 255;
+      }
+
+      while (n >= 256) {
+        n -= 255;
+      }
+
+      return EXP_TABLE[n];
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrPolynomial
+  //---------------------------------------------------------------------
+
+  function qrPolynomial(num, shift) {
+
+    if (typeof num.length == 'undefined') {
+      throw num.length + '/' + shift;
+    }
+
+    var _num = function() {
+      var offset = 0;
+      while (offset < num.length && num[offset] == 0) {
+        offset += 1;
+      }
+      var _num = new Array(num.length - offset + shift);
+      for (var i = 0; i < num.length - offset; i += 1) {
+        _num[i] = num[i + offset];
+      }
+      return _num;
+    }();
+
+    var _this = {};
+
+    _this.getAt = function(index) {
+      return _num[index];
+    };
+
+    _this.getLength = function() {
+      return _num.length;
+    };
+
+    _this.multiply = function(e) {
+
+      var num = new Array(_this.getLength() + e.getLength() - 1);
+
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        for (var j = 0; j < e.getLength(); j += 1) {
+          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
+        }
+      }
+
+      return qrPolynomial(num, 0);
+    };
+
+    _this.mod = function(e) {
+
+      if (_this.getLength() - e.getLength() < 0) {
+        return _this;
+      }
+
+      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
+
+      var num = new Array(_this.getLength() );
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        num[i] = _this.getAt(i);
+      }
+
+      for (var i = 0; i < e.getLength(); i += 1) {
+        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
+      }
+
+      // recursive call
+      return qrPolynomial(num, 0).mod(e);
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // QRRSBlock
+  //---------------------------------------------------------------------
+
+  var QRRSBlock = function() {
+
+    var RS_BLOCK_TABLE = [
+
+      // L
+      // M
+      // Q
+      // H
+
+      // 1
+      [1, 26, 19],
+      [1, 26, 16],
+      [1, 26, 13],
+      [1, 26, 9],
+
+      // 2
+      [1, 44, 34],
+      [1, 44, 28],
+      [1, 44, 22],
+      [1, 44, 16],
+
+      // 3
+      [1, 70, 55],
+      [1, 70, 44],
+      [2, 35, 17],
+      [2, 35, 13],
+
+      // 4
+      [1, 100, 80],
+      [2, 50, 32],
+      [2, 50, 24],
+      [4, 25, 9],
+
+      // 5
+      [1, 134, 108],
+      [2, 67, 43],
+      [2, 33, 15, 2, 34, 16],
+      [2, 33, 11, 2, 34, 12],
+
+      // 6
+      [2, 86, 68],
+      [4, 43, 27],
+      [4, 43, 19],
+      [4, 43, 15],
+
+      // 7
+      [2, 98, 78],
+      [4, 49, 31],
+      [2, 32, 14, 4, 33, 15],
+      [4, 39, 13, 1, 40, 14],
+
+      // 8
+      [2, 121, 97],
+      [2, 60, 38, 2, 61, 39],
+      [4, 40, 18, 2, 41, 19],
+      [4, 40, 14, 2, 41, 15],
+
+      // 9
+      [2, 146, 116],
+      [3, 58, 36, 2, 59, 37],
+      [4, 36, 16, 4, 37, 17],
+      [4, 36, 12, 4, 37, 13],
+
+      // 10
+      [2, 86, 68, 2, 87, 69],
+      [4, 69, 43, 1, 70, 44],
+      [6, 43, 19, 2, 44, 20],
+      [6, 43, 15, 2, 44, 16],
+
+      // 11
+      [4, 101, 81],
+      [1, 80, 50, 4, 81, 51],
+      [4, 50, 22, 4, 51, 23],
+      [3, 36, 12, 8, 37, 13],
+
+      // 12
+      [2, 116, 92, 2, 117, 93],
+      [6, 58, 36, 2, 59, 37],
+      [4, 46, 20, 6, 47, 21],
+      [7, 42, 14, 4, 43, 15],
+
+      // 13
+      [4, 133, 107],
+      [8, 59, 37, 1, 60, 38],
+      [8, 44, 20, 4, 45, 21],
+      [12, 33, 11, 4, 34, 12],
+
+      // 14
+      [3, 145, 115, 1, 146, 116],
+      [4, 64, 40, 5, 65, 41],
+      [11, 36, 16, 5, 37, 17],
+      [11, 36, 12, 5, 37, 13],
+
+      // 15
+      [5, 109, 87, 1, 110, 88],
+      [5, 65, 41, 5, 66, 42],
+      [5, 54, 24, 7, 55, 25],
+      [11, 36, 12, 7, 37, 13],
+
+      // 16
+      [5, 122, 98, 1, 123, 99],
+      [7, 73, 45, 3, 74, 46],
+      [15, 43, 19, 2, 44, 20],
+      [3, 45, 15, 13, 46, 16],
+
+      // 17
+      [1, 135, 107, 5, 136, 108],
+      [10, 74, 46, 1, 75, 47],
+      [1, 50, 22, 15, 51, 23],
+      [2, 42, 14, 17, 43, 15],
+
+      // 18
+      [5, 150, 120, 1, 151, 121],
+      [9, 69, 43, 4, 70, 44],
+      [17, 50, 22, 1, 51, 23],
+      [2, 42, 14, 19, 43, 15],
+
+      // 19
+      [3, 141, 113, 4, 142, 114],
+      [3, 70, 44, 11, 71, 45],
+      [17, 47, 21, 4, 48, 22],
+      [9, 39, 13, 16, 40, 14],
+
+      // 20
+      [3, 135, 107, 5, 136, 108],
+      [3, 67, 41, 13, 68, 42],
+      [15, 54, 24, 5, 55, 25],
+      [15, 43, 15, 10, 44, 16],
+
+      // 21
+      [4, 144, 116, 4, 145, 117],
+      [17, 68, 42],
+      [17, 50, 22, 6, 51, 23],
+      [19, 46, 16, 6, 47, 17],
+
+      // 22
+      [2, 139, 111, 7, 140, 112],
+      [17, 74, 46],
+      [7, 54, 24, 16, 55, 25],
+      [34, 37, 13],
+
+      // 23
+      [4, 151, 121, 5, 152, 122],
+      [4, 75, 47, 14, 76, 48],
+      [11, 54, 24, 14, 55, 25],
+      [16, 45, 15, 14, 46, 16],
+
+      // 24
+      [6, 147, 117, 4, 148, 118],
+      [6, 73, 45, 14, 74, 46],
+      [11, 54, 24, 16, 55, 25],
+      [30, 46, 16, 2, 47, 17],
+
+      // 25
+      [8, 132, 106, 4, 133, 107],
+      [8, 75, 47, 13, 76, 48],
+      [7, 54, 24, 22, 55, 25],
+      [22, 45, 15, 13, 46, 16],
+
+      // 26
+      [10, 142, 114, 2, 143, 115],
+      [19, 74, 46, 4, 75, 47],
+      [28, 50, 22, 6, 51, 23],
+      [33, 46, 16, 4, 47, 17],
+
+      // 27
+      [8, 152, 122, 4, 153, 123],
+      [22, 73, 45, 3, 74, 46],
+      [8, 53, 23, 26, 54, 24],
+      [12, 45, 15, 28, 46, 16],
+
+      // 28
+      [3, 147, 117, 10, 148, 118],
+      [3, 73, 45, 23, 74, 46],
+      [4, 54, 24, 31, 55, 25],
+      [11, 45, 15, 31, 46, 16],
+
+      // 29
+      [7, 146, 116, 7, 147, 117],
+      [21, 73, 45, 7, 74, 46],
+      [1, 53, 23, 37, 54, 24],
+      [19, 45, 15, 26, 46, 16],
+
+      // 30
+      [5, 145, 115, 10, 146, 116],
+      [19, 75, 47, 10, 76, 48],
+      [15, 54, 24, 25, 55, 25],
+      [23, 45, 15, 25, 46, 16],
+
+      // 31
+      [13, 145, 115, 3, 146, 116],
+      [2, 74, 46, 29, 75, 47],
+      [42, 54, 24, 1, 55, 25],
+      [23, 45, 15, 28, 46, 16],
+
+      // 32
+      [17, 145, 115],
+      [10, 74, 46, 23, 75, 47],
+      [10, 54, 24, 35, 55, 25],
+      [19, 45, 15, 35, 46, 16],
+
+      // 33
+      [17, 145, 115, 1, 146, 116],
+      [14, 74, 46, 21, 75, 47],
+      [29, 54, 24, 19, 55, 25],
+      [11, 45, 15, 46, 46, 16],
+
+      // 34
+      [13, 145, 115, 6, 146, 116],
+      [14, 74, 46, 23, 75, 47],
+      [44, 54, 24, 7, 55, 25],
+      [59, 46, 16, 1, 47, 17],
+
+      // 35
+      [12, 151, 121, 7, 152, 122],
+      [12, 75, 47, 26, 76, 48],
+      [39, 54, 24, 14, 55, 25],
+      [22, 45, 15, 41, 46, 16],
+
+      // 36
+      [6, 151, 121, 14, 152, 122],
+      [6, 75, 47, 34, 76, 48],
+      [46, 54, 24, 10, 55, 25],
+      [2, 45, 15, 64, 46, 16],
+
+      // 37
+      [17, 152, 122, 4, 153, 123],
+      [29, 74, 46, 14, 75, 47],
+      [49, 54, 24, 10, 55, 25],
+      [24, 45, 15, 46, 46, 16],
+
+      // 38
+      [4, 152, 122, 18, 153, 123],
+      [13, 74, 46, 32, 75, 47],
+      [48, 54, 24, 14, 55, 25],
+      [42, 45, 15, 32, 46, 16],
+
+      // 39
+      [20, 147, 117, 4, 148, 118],
+      [40, 75, 47, 7, 76, 48],
+      [43, 54, 24, 22, 55, 25],
+      [10, 45, 15, 67, 46, 16],
+
+      // 40
+      [19, 148, 118, 6, 149, 119],
+      [18, 75, 47, 31, 76, 48],
+      [34, 54, 24, 34, 55, 25],
+      [20, 45, 15, 61, 46, 16]
+    ];
+
+    var qrRSBlock = function(totalCount, dataCount) {
+      var _this = {};
+      _this.totalCount = totalCount;
+      _this.dataCount = dataCount;
+      return _this;
+    };
+
+    var _this = {};
+
+    var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+
+      switch(errorCorrectionLevel) {
+      case QRErrorCorrectionLevel.L :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+      case QRErrorCorrectionLevel.M :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+      case QRErrorCorrectionLevel.Q :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+      case QRErrorCorrectionLevel.H :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+      default :
+        return undefined;
+      }
+    };
+
+    _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+
+      var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+
+      if (typeof rsBlock == 'undefined') {
+        throw 'bad rs block @ typeNumber:' + typeNumber +
+            '/errorCorrectionLevel:' + errorCorrectionLevel;
+      }
+
+      var length = rsBlock.length / 3;
+
+      var list = [];
+
+      for (var i = 0; i < length; i += 1) {
+
+        var count = rsBlock[i * 3 + 0];
+        var totalCount = rsBlock[i * 3 + 1];
+        var dataCount = rsBlock[i * 3 + 2];
+
+        for (var j = 0; j < count; j += 1) {
+          list.push(qrRSBlock(totalCount, dataCount) );
+        }
+      }
+
+      return list;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrBitBuffer
+  //---------------------------------------------------------------------
+
+  var qrBitBuffer = function() {
+
+    var _buffer = [];
+    var _length = 0;
+
+    var _this = {};
+
+    _this.getBuffer = function() {
+      return _buffer;
+    };
+
+    _this.getAt = function(index) {
+      var bufIndex = Math.floor(index / 8);
+      return ( (_buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+    };
+
+    _this.put = function(num, length) {
+      for (var i = 0; i < length; i += 1) {
+        _this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+      }
+    };
+
+    _this.getLengthInBits = function() {
+      return _length;
+    };
+
+    _this.putBit = function(bit) {
+
+      var bufIndex = Math.floor(_length / 8);
+      if (_buffer.length <= bufIndex) {
+        _buffer.push(0);
+      }
+
+      if (bit) {
+        _buffer[bufIndex] |= (0x80 >>> (_length % 8) );
+      }
+
+      _length += 1;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrNumber
+  //---------------------------------------------------------------------
+
+  var qrNumber = function(data) {
+
+    var _mode = QRMode.MODE_NUMBER;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _data;
+
+      var i = 0;
+
+      while (i + 2 < data.length) {
+        buffer.put(strToNum(data.substring(i, i + 3) ), 10);
+        i += 3;
+      }
+
+      if (i < data.length) {
+        if (data.length - i == 1) {
+          buffer.put(strToNum(data.substring(i, i + 1) ), 4);
+        } else if (data.length - i == 2) {
+          buffer.put(strToNum(data.substring(i, i + 2) ), 7);
+        }
+      }
+    };
+
+    var strToNum = function(s) {
+      var num = 0;
+      for (var i = 0; i < s.length; i += 1) {
+        num = num * 10 + chatToNum(s.charAt(i) );
+      }
+      return num;
+    };
+
+    var chatToNum = function(c) {
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      }
+      throw 'illegal char :' + c;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrAlphaNum
+  //---------------------------------------------------------------------
+
+  var qrAlphaNum = function(data) {
+
+    var _mode = QRMode.MODE_ALPHA_NUM;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var s = _data;
+
+      var i = 0;
+
+      while (i + 1 < s.length) {
+        buffer.put(
+          getCode(s.charAt(i) ) * 45 +
+          getCode(s.charAt(i + 1) ), 11);
+        i += 2;
+      }
+
+      if (i < s.length) {
+        buffer.put(getCode(s.charAt(i) ), 6);
+      }
+    };
+
+    var getCode = function(c) {
+
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      } else if ('A' <= c && c <= 'Z') {
+        return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+      } else {
+        switch (c) {
+        case ' ' : return 36;
+        case '$' : return 37;
+        case '%' : return 38;
+        case '*' : return 39;
+        case '+' : return 40;
+        case '-' : return 41;
+        case '.' : return 42;
+        case '/' : return 43;
+        case ':' : return 44;
+        default :
+          throw 'illegal char :' + c;
+        }
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qr8BitByte
+  //---------------------------------------------------------------------
+
+  var qr8BitByte = function(data) {
+
+    var _mode = QRMode.MODE_8BIT_BYTE;
+    var _data = data;
+    var _bytes = qrcode.stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _bytes.length;
+    };
+
+    _this.write = function(buffer) {
+      for (var i = 0; i < _bytes.length; i += 1) {
+        buffer.put(_bytes[i], 8);
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrKanji
+  //---------------------------------------------------------------------
+
+  var qrKanji = function(data) {
+
+    var _mode = QRMode.MODE_KANJI;
+    var _data = data;
+
+    var stringToBytes = qrcode.stringToBytesFuncs['SJIS'];
+    if (!stringToBytes) {
+      throw 'sjis not supported.';
+    }
+    !function(c, code) {
+      // self test for sjis support.
+      var test = stringToBytes(c);
+      if (test.length != 2 || ( (test[0] << 8) | test[1]) != code) {
+        throw 'sjis not supported.';
+      }
+    }('\u53cb', 0x9746);
+
+    var _bytes = stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return ~~(_bytes.length / 2);
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _bytes;
+
+      var i = 0;
+
+      while (i + 1 < data.length) {
+
+        var c = ( (0xff & data[i]) << 8) | (0xff & data[i + 1]);
+
+        if (0x8140 <= c && c <= 0x9FFC) {
+          c -= 0x8140;
+        } else if (0xE040 <= c && c <= 0xEBBF) {
+          c -= 0xC140;
+        } else {
+          throw 'illegal char at ' + (i + 1) + '/' + c;
+        }
+
+        c = ( (c >>> 8) & 0xff) * 0xC0 + (c & 0xff);
+
+        buffer.put(c, 13);
+
+        i += 2;
+      }
+
+      if (i < data.length) {
+        throw 'illegal char at ' + (i + 1);
+      }
+    };
+
+    return _this;
+  };
+
+  //=====================================================================
+  // GIF Support etc.
+  //
+
+  //---------------------------------------------------------------------
+  // byteArrayOutputStream
+  //---------------------------------------------------------------------
+
+  var byteArrayOutputStream = function() {
+
+    var _bytes = [];
+
+    var _this = {};
+
+    _this.writeByte = function(b) {
+      _bytes.push(b & 0xff);
+    };
+
+    _this.writeShort = function(i) {
+      _this.writeByte(i);
+      _this.writeByte(i >>> 8);
+    };
+
+    _this.writeBytes = function(b, off, len) {
+      off = off || 0;
+      len = len || b.length;
+      for (var i = 0; i < len; i += 1) {
+        _this.writeByte(b[i + off]);
+      }
+    };
+
+    _this.writeString = function(s) {
+      for (var i = 0; i < s.length; i += 1) {
+        _this.writeByte(s.charCodeAt(i) );
+      }
+    };
+
+    _this.toByteArray = function() {
+      return _bytes;
+    };
+
+    _this.toString = function() {
+      var s = '';
+      s += '[';
+      for (var i = 0; i < _bytes.length; i += 1) {
+        if (i > 0) {
+          s += ',';
+        }
+        s += _bytes[i];
+      }
+      s += ']';
+      return s;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64EncodeOutputStream
+  //---------------------------------------------------------------------
+
+  var base64EncodeOutputStream = function() {
+
+    var _buffer = 0;
+    var _buflen = 0;
+    var _length = 0;
+    var _base64 = '';
+
+    var _this = {};
+
+    var writeEncoded = function(b) {
+      _base64 += String.fromCharCode(encode(b & 0x3f) );
+    };
+
+    var encode = function(n) {
+      if (n < 0) {
+        // error.
+      } else if (n < 26) {
+        return 0x41 + n;
+      } else if (n < 52) {
+        return 0x61 + (n - 26);
+      } else if (n < 62) {
+        return 0x30 + (n - 52);
+      } else if (n == 62) {
+        return 0x2b;
+      } else if (n == 63) {
+        return 0x2f;
+      }
+      throw 'n:' + n;
+    };
+
+    _this.writeByte = function(n) {
+
+      _buffer = (_buffer << 8) | (n & 0xff);
+      _buflen += 8;
+      _length += 1;
+
+      while (_buflen >= 6) {
+        writeEncoded(_buffer >>> (_buflen - 6) );
+        _buflen -= 6;
+      }
+    };
+
+    _this.flush = function() {
+
+      if (_buflen > 0) {
+        writeEncoded(_buffer << (6 - _buflen) );
+        _buffer = 0;
+        _buflen = 0;
+      }
+
+      if (_length % 3 != 0) {
+        // padding
+        var padlen = 3 - _length % 3;
+        for (var i = 0; i < padlen; i += 1) {
+          _base64 += '=';
+        }
+      }
+    };
+
+    _this.toString = function() {
+      return _base64;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64DecodeInputStream
+  //---------------------------------------------------------------------
+
+  var base64DecodeInputStream = function(str) {
+
+    var _str = str;
+    var _pos = 0;
+    var _buffer = 0;
+    var _buflen = 0;
+
+    var _this = {};
+
+    _this.read = function() {
+
+      while (_buflen < 8) {
+
+        if (_pos >= _str.length) {
+          if (_buflen == 0) {
+            return -1;
+          }
+          throw 'unexpected end of file./' + _buflen;
+        }
+
+        var c = _str.charAt(_pos);
+        _pos += 1;
+
+        if (c == '=') {
+          _buflen = 0;
+          return -1;
+        } else if (c.match(/^\s$/) ) {
+          // ignore if whitespace.
+          continue;
+        }
+
+        _buffer = (_buffer << 6) | decode(c.charCodeAt(0) );
+        _buflen += 6;
+      }
+
+      var n = (_buffer >>> (_buflen - 8) ) & 0xff;
+      _buflen -= 8;
+      return n;
+    };
+
+    var decode = function(c) {
+      if (0x41 <= c && c <= 0x5a) {
+        return c - 0x41;
+      } else if (0x61 <= c && c <= 0x7a) {
+        return c - 0x61 + 26;
+      } else if (0x30 <= c && c <= 0x39) {
+        return c - 0x30 + 52;
+      } else if (c == 0x2b) {
+        return 62;
+      } else if (c == 0x2f) {
+        return 63;
+      } else {
+        throw 'c:' + c;
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // gifImage (B/W)
+  //---------------------------------------------------------------------
+
+  var gifImage = function(width, height) {
+
+    var _width = width;
+    var _height = height;
+    var _data = new Array(width * height);
+
+    var _this = {};
+
+    _this.setPixel = function(x, y, pixel) {
+      _data[y * _width + x] = pixel;
+    };
+
+    _this.write = function(out) {
+
+      //---------------------------------
+      // GIF Signature
+
+      out.writeString('GIF87a');
+
+      //---------------------------------
+      // Screen Descriptor
+
+      out.writeShort(_width);
+      out.writeShort(_height);
+
+      out.writeByte(0x80); // 2bit
+      out.writeByte(0);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Global Color Map
+
+      // black
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+
+      // white
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+
+      //---------------------------------
+      // Image Descriptor
+
+      out.writeString(',');
+      out.writeShort(0);
+      out.writeShort(0);
+      out.writeShort(_width);
+      out.writeShort(_height);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Local Color Map
+
+      //---------------------------------
+      // Raster Data
+
+      var lzwMinCodeSize = 2;
+      var raster = getLZWRaster(lzwMinCodeSize);
+
+      out.writeByte(lzwMinCodeSize);
+
+      var offset = 0;
+
+      while (raster.length - offset > 255) {
+        out.writeByte(255);
+        out.writeBytes(raster, offset, 255);
+        offset += 255;
+      }
+
+      out.writeByte(raster.length - offset);
+      out.writeBytes(raster, offset, raster.length - offset);
+      out.writeByte(0x00);
+
+      //---------------------------------
+      // GIF Terminator
+      out.writeString(';');
+    };
+
+    var bitOutputStream = function(out) {
+
+      var _out = out;
+      var _bitLength = 0;
+      var _bitBuffer = 0;
+
+      var _this = {};
+
+      _this.write = function(data, length) {
+
+        if ( (data >>> length) != 0) {
+          throw 'length over';
+        }
+
+        while (_bitLength + length >= 8) {
+          _out.writeByte(0xff & ( (data << _bitLength) | _bitBuffer) );
+          length -= (8 - _bitLength);
+          data >>>= (8 - _bitLength);
+          _bitBuffer = 0;
+          _bitLength = 0;
+        }
+
+        _bitBuffer = (data << _bitLength) | _bitBuffer;
+        _bitLength = _bitLength + length;
+      };
+
+      _this.flush = function() {
+        if (_bitLength > 0) {
+          _out.writeByte(_bitBuffer);
+        }
+      };
+
+      return _this;
+    };
+
+    var getLZWRaster = function(lzwMinCodeSize) {
+
+      var clearCode = 1 << lzwMinCodeSize;
+      var endCode = (1 << lzwMinCodeSize) + 1;
+      var bitLength = lzwMinCodeSize + 1;
+
+      // Setup LZWTable
+      var table = lzwTable();
+
+      for (var i = 0; i < clearCode; i += 1) {
+        table.add(String.fromCharCode(i) );
+      }
+      table.add(String.fromCharCode(clearCode) );
+      table.add(String.fromCharCode(endCode) );
+
+      var byteOut = byteArrayOutputStream();
+      var bitOut = bitOutputStream(byteOut);
+
+      // clear code
+      bitOut.write(clearCode, bitLength);
+
+      var dataIndex = 0;
+
+      var s = String.fromCharCode(_data[dataIndex]);
+      dataIndex += 1;
+
+      while (dataIndex < _data.length) {
+
+        var c = String.fromCharCode(_data[dataIndex]);
+        dataIndex += 1;
+
+        if (table.contains(s + c) ) {
+
+          s = s + c;
+
+        } else {
+
+          bitOut.write(table.indexOf(s), bitLength);
+
+          if (table.size() < 0xfff) {
+
+            if (table.size() == (1 << bitLength) ) {
+              bitLength += 1;
+            }
+
+            table.add(s + c);
+          }
+
+          s = c;
+        }
+      }
+
+      bitOut.write(table.indexOf(s), bitLength);
+
+      // end code
+      bitOut.write(endCode, bitLength);
+
+      bitOut.flush();
+
+      return byteOut.toByteArray();
+    };
+
+    var lzwTable = function() {
+
+      var _map = {};
+      var _size = 0;
+
+      var _this = {};
+
+      _this.add = function(key) {
+        if (_this.contains(key) ) {
+          throw 'dup key:' + key;
+        }
+        _map[key] = _size;
+        _size += 1;
+      };
+
+      _this.size = function() {
+        return _size;
+      };
+
+      _this.indexOf = function(key) {
+        return _map[key];
+      };
+
+      _this.contains = function(key) {
+        return typeof _map[key] != 'undefined';
+      };
+
+      return _this;
+    };
+
+    return _this;
+  };
+
+  var createDataURL = function(width, height, getPixel) {
+    var gif = gifImage(width, height);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        gif.setPixel(x, y, getPixel(x, y) );
+      }
+    }
+
+    var b = byteArrayOutputStream();
+    gif.write(b);
+
+    var base64 = base64EncodeOutputStream();
+    var bytes = b.toByteArray();
+    for (var i = 0; i < bytes.length; i += 1) {
+      base64.writeByte(bytes[i]);
+    }
+    base64.flush();
+
+    return 'data:image/gif;base64,' + base64;
+  };
+
+  //---------------------------------------------------------------------
+  // returns qrcode function.
+
+  return qrcode;
+}();
+
+// multibyte support
+!function() {
+
+  qrcode.stringToBytesFuncs['UTF-8'] = function(s) {
+    // http://stackoverflow.com/questions/18729405/how-to-convert-utf8-string-to-byte-array
+    function toUTF8Array(str) {
+      var utf8 = [];
+      for (var i=0; i < str.length; i++) {
+        var charcode = str.charCodeAt(i);
+        if (charcode < 0x80) utf8.push(charcode);
+        else if (charcode < 0x800) {
+          utf8.push(0xc0 | (charcode >> 6),
+              0x80 | (charcode & 0x3f));
+        }
+        else if (charcode < 0xd800 || charcode >= 0xe000) {
+          utf8.push(0xe0 | (charcode >> 12),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+        // surrogate pair
+        else {
+          i++;
+          // UTF-16 encodes 0x10000-0x10FFFF by
+          // subtracting 0x10000 and splitting the
+          // 20 bits of 0x0-0xFFFFF into two halves
+          charcode = 0x10000 + (((charcode & 0x3ff)<<10)
+            | (str.charCodeAt(i) & 0x3ff));
+          utf8.push(0xf0 | (charcode >>18),
+              0x80 | ((charcode>>12) & 0x3f),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+      }
+      return utf8;
+    }
+    return toUTF8Array(s);
+  };
+
+}();
+
+(function (factory) {
+  if (typeof define === 'function' && define.amd) {
+      define([], factory);
+  } else if (typeof exports === 'object') {
+      module.exports = factory();
+  }
+}(function () {
+    return qrcode;
+}));
+
+</script>
+<script>
+// ======================================================================
+// Prototype state
+// ======================================================================
+const params = new URLSearchParams(location.search);
+const HOSTS = [{ k: 'A', name: 'Control desk' }, { k: 'B', name: 'Remote (phone)' }, { k: 'C', name: 'Rounds board' }];
+const STAGES = [{ k: 'A', name: 'Giant clock' }, { k: 'B', name: 'Join sidebar' }, { k: 'C', name: 'Name tiles' }];
+let hostV = HOSTS.some(h => h.k === params.get('host')) ? params.get('host') : 'A';
+let stageV = STAGES.some(s => s.k === params.get('stage')) ? params.get('stage') : 'A';
+let view = ['split', 'host', 'stage'].includes(params.get('view')) ? params.get('view') : 'split';
+
+const PH = { idle: 'Welcome', upcoming: 'Up next', running: 'Running', timesup: "Time's up", voting: 'Voting', results: 'Results' };
+const LIFE = ['upcoming', 'running', 'timesup', 'voting', 'results'];
+const NAMES = ['Anna', 'Jonas', 'Mira', 'Elias', 'Saga', 'Omar', 'Linnea', 'Felix', 'Ida', 'Noah', 'Wilma', 'Hugo', 'Alva', 'Leo', 'Maja', 'Sami', 'Ebba', 'Viktor', 'Nora', 'Aron'];
+
+let S;            // the simulated Durable Object: the one source of truth
+let SIM;          // simulator-only knowledge (what the Organizer last exported, voter appeal...)
+let SNAP = {};    // what the Host console and Stage last received (frozen while "offline")
+const NET = { host: true, stage: true };
+let vnow = Date.now(), lastReal = performance.now(), speed = 1;
+const ui = { addName: {}, simRound: null, claimKey: '', claimErr: '', remote: false };
+const LOG = [];
+function log(who, msg) { LOG.unshift(`${new Date(vnow).toTimeString().slice(0, 8)}  ${who.padEnd(6)} ${msg}`); LOG.length = Math.min(LOG.length, 60); }
+
+function seed(claimed) {
+  const rounds = ['Heat 1', 'Heat 2', 'Heat 3', 'Heat 4', 'Final'].map((name, i) => ({ id: ['r7fq2', 'rk93m', 'rx1vd', 'rp0ab', 'rf1nl'][i], name }));
+  S = { comp: { name: 'Göteborg 2026', joinCode: 'K7QM4X', url: 'citd.example.dev/a' }, claimed,
+    rounds, current: null, phase: 'idle', durationMs: 15 * 60e3, endsAt: null, totalMs: 0,
+    entries: {}, votes: {}, phones: 0 };
+  SIM = { rev: {}, seat: 1, voter: 1, appeal: {}, pending: [] };
+  rounds.forEach(r => { S.entries[r.id] = []; S.votes[r.id] = {}; SIM.rev[r.id] = 1; });
+  SIM.rev.r7fq2 = 3;
+  const laptops = [['r7fq2', 'Anna', 3], ['r7fq2', 'Jonas', 2], ['r7fq2', 'Mira', 3], ['r7fq2', 'Elias', 3, false], ['r7fq2', 'Saga', 3],
+    ['rk93m', 'Omar', 1], ['rk93m', 'Linnea', 1], ['rf1nl', 'Felix', 1]];
+  if (claimed) {
+    laptops.forEach(([rid, name, rev, online]) => connectLaptop(rid, name, rev, online !== false));
+    S.current = 'r7fq2'; S.phase = 'upcoming'; S.phones = 38;
+  } else {
+    SIM.pending = laptops; // these laptops keep retrying silently until the claim
+  }
+  ui.simRound = S.current || rounds[0].id;
+  SNAP = { host: S, stage: S }; NET.host = NET.stage = true;
+  LOG.length = 0; log('sim', claimed ? 'seeded mid-event: Heat 1 is up next' : 'fresh Competition, not claimed yet');
+}
+
+// ======================================================================
+// Server-side rules (what the Durable Object would enforce)
+// ======================================================================
+const roundOf = (X, rid = X.current) => X.rounds.find(r => r.id === rid);
+const nameOf = rid => (roundOf(S, rid) || { name: 'the welcome screen' }).name;
+const maxRev = (X, rid) => Math.max(0, ...X.entries[rid].filter(e => !e.manual).map(e => e.rev));
+const isStale = (X, rid, e) => !e.manual && e.rev < maxRev(X, rid);
+const remaining = X => X.phase === 'running' ? Math.max(0, X.endsAt - vnow) : 0;
+function stats(X, rid) {
+  const es = X.entries[rid];
+  return { total: es.length, ready: es.filter(e => !e.manual && e.online).length, offline: es.filter(e => !e.manual && !e.online).length,
+    hand: es.filter(e => e.manual).length, stale: es.filter(e => isStale(X, rid, e)).length, newest: maxRev(X, rid) };
+}
+function tally(X, rid = X.current) {
+  if (!rid) return { rows: [], total: 0, max: 0, tie: false };
+  const es = X.entries[rid], counts = new Map(es.map(e => [e.id, 0]));
+  let total = 0;
+  for (const eid of Object.values(X.votes[rid])) if (counts.has(eid)) { counts.set(eid, counts.get(eid) + 1); total++; }
+  const rows = es.map((e, i) => ({ e, n: counts.get(e.id), order: i })).sort((a, b) => b.n - a.n || a.order - b.order);
+  const max = rows.length ? rows[0].n : 0;
+  let rank = 0, prev = -1;
+  rows.forEach((r, i) => { if (r.n !== prev) { rank = i + 1; prev = r.n; } r.rank = rank; r.lead = max > 0 && r.n === max; });
+  return { rows, total, max, tie: rows.filter(r => r.lead).length > 1 };
+}
+function connectLaptop(rid, name, rev, online = true) {
+  if (!S.claimed) { log('server', `rejected ${name}'s laptop: Competition not claimed (it retries silently)`); return; }
+  const e = { id: 's' + SIM.seat++, name, rev, online, manual: false };
+  S.entries[rid].push(e); SIM.appeal[e.id] = .4 + Math.random() * 2.6;
+  log('laptop', `${name} connected to ${nameOf(rid)} on Rev ${rev}`);
+}
+
+// ======================================================================
+// Host actions (each one is a message the Host console sends with the Host secret)
+// ======================================================================
+const H = {
+  async pick(rid) {
+    rid = rid || null;
+    if (rid === S.current) return render();
+    const busy = ['running', 'timesup', 'voting'].includes(S.phase);
+    if (busy && !(await ask(`Put ${nameOf(rid)} on the Stage?`,
+      `${nameOf(S.current)} is ${PH[S.phase].toLowerCase()}. Switching ${S.phase === 'running' ? 'abandons its timer' : S.phase === 'voting' ? 'closes voting without showing results' : 'skips its voting'}. Its votes stay until it's started again.`, 'Switch', true))) return render();
+    S.current = rid; S.phase = rid ? 'upcoming' : 'idle'; S.endsAt = null;
+    log('host', rid ? `made ${nameOf(rid)} the Current Round (upcoming)` : 'cleared the Stage (welcome screen)');
+    ui.simRound = rid || ui.simRound;
+  },
+  setDur(v) { const m = Math.max(1, Math.min(90, Math.round(+v || 0))); if (m * 60e3 !== S.durationMs) { S.durationMs = m * 60e3; log('host', `set duration to ${m} min`); } },
+  durDelta(d) { H.setDur(S.durationMs / 60e3 + +d); },
+  async start() {
+    const n = Object.keys(S.votes[S.current]).length;
+    if (n && !(await ask(`Start ${nameOf(S.current)} again?`, `Starting a re-run clears the ${n} votes from its last run.`, 'Start and clear votes', true))) return;
+    S.votes[S.current] = {}; S.phase = 'running'; S.totalMs = S.durationMs; S.endsAt = vnow + S.durationMs;
+    log('host', `started ${nameOf(S.current)}: ${fmt(S.durationMs)}`);
+  },
+  addTime(ms) { S.endsAt += +ms; S.totalMs += +ms; log('host', `added ${ms / 1000} s`); },
+  async endEarly() {
+    if (!(await ask(`End ${nameOf(S.current)} now?`, `${fmt(remaining(S))} left. Everyone's time is up at once.`, 'End now', true))) return;
+    S.phase = 'timesup'; S.endsAt = null; log('host', 'ended early');
+  },
+  openVoting() { S.phase = 'voting'; log('host', 'opened voting'); },
+  closeVoting() { S.phase = 'results'; log('host', `closed voting: ${tally(S).total} votes`); },
+  reopen() { S.phase = 'voting'; log('host', 'reopened voting (votes kept)'); },
+  async rerun() {
+    if (!(await ask(`Back to “up next” for ${nameOf(S.current)}?`, 'The Stage leaves this screen. Votes are kept until you press Start, which clears them.', 'Back to up next'))) return;
+    S.phase = 'upcoming'; S.endsAt = null; log('host', `${nameOf(S.current)} back to upcoming`);
+  },
+  addEntry(rid) {
+    const name = (ui.addName[rid] || '').trim(); if (!name) return;
+    S.entries[rid].push({ id: 'h' + SIM.seat++, name, rev: 0, online: false, manual: true });
+    ui.addName[rid] = ''; log('host', `added ${name} to ${nameOf(rid)} by hand`);
+  },
+  async remove(arg) {
+    const [rid, eid] = arg.split(':'); const e = S.entries[rid].find(x => x.id === eid); if (!e) return;
+    const nv = Object.values(S.votes[rid]).filter(v => v === eid).length;
+    if (!(await ask(`Remove ${e.name} from ${nameOf(rid)}?`,
+      (nv ? `${nv} vote${nv > 1 ? 's' : ''} for them ${nv > 1 ? 'are' : 'is'} discarded, and those phones go back to “not voted”. ` : '') +
+      (e.online ? 'Their laptop is still connected. It stays hidden for the rest of this Round.' : ''), 'Remove', true))) return;
+    S.entries[rid] = S.entries[rid].filter(x => x.id !== eid);
+    for (const [v, t] of Object.entries(S.votes[rid])) if (t === eid) delete S.votes[rid][v];
+    log('host', `removed ${e.name} from ${nameOf(rid)}${nv ? ` (${nv} votes discarded)` : ''}`);
+  },
+  claim() {
+    if (!ui.claimKey.trim()) { ui.claimErr = 'Enter the Organizer key.'; return; }
+    if (ui.claimKey.trim().toLowerCase() === 'wrong') { ui.claimErr = 'That Organizer key is wrong. (Try anything except “wrong”.)'; return; }
+    S.claimed = true; ui.claimErr = ''; ui.claimKey = '';
+    log('host', 'claimed the Competition (Join code K7QM4X bound to this Host secret)');
+    setTimeout(() => { SIM.pending.forEach(([rid, n, rev, on]) => connectLaptop(rid, n, rev, on !== false)); SIM.pending = []; S.phones = 12; log('sim', 'waiting laptops retried and connected; phones scanned the Stage'); render(); }, 900);
+  },
+};
+const HOST_ACTS = new Set(Object.keys(H));
+
+// ======================================================================
+// Venue simulator (prototype only)
+// ======================================================================
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function freshName() { const used = new Set(Object.values(S.entries).flat().map(e => e.name)); return pick(NAMES.filter(n => !used.has(n))) || pick(NAMES); }
+function simVoteOnce() {
+  const rid = S.current, es = S.entries[rid]; if (!es.length) return;
+  const voters = Object.keys(S.votes[rid]);
+  if (voters.length >= S.phones) S.phones++;
+  const w = es.map(e => SIM.appeal[e.id] || 1), sum = w.reduce((a, b) => a + b, 0);
+  let x = Math.random() * sum, i = 0; while ((x -= w[i]) > 0) i++;
+  S.votes[rid]['v' + SIM.voter++] = es[Math.min(i, es.length - 1)].id;
+}
+const SIMA = {
+  speed(n) { speed = +n; log('sim', `clock ${n}x`); },
+  ff() { if (S.phase === 'running') { S.endsAt = vnow + 15e3; log('sim', 'fast-forward to 0:15 left'); } },
+  laptop() { connectLaptop(ui.simRound, freshName(), SIM.rev[ui.simRound]); },
+  stale() { connectLaptop(ui.simRound, freshName(), Math.max(1, SIM.rev[ui.simRound] - 1)); },
+  reexport() { SIM.rev[ui.simRound]++; log('sim', `Organizer re-exported ${nameOf(ui.simRound)} as Rev ${SIM.rev[ui.simRound]} (new laptops open it)`); },
+  reopenNew() {
+    const rid = ui.simRound, max = SIM.rev[rid], e = S.entries[rid].find(e => !e.manual && e.rev < max);
+    if (!e) return log('sim', 'nobody on an older Revision');
+    e.rev = max; e.online = true; log('laptop', `${e.name} reopened the new file: same seat, now Rev ${max}`);
+  },
+  drop() { const e = pick(S.entries[ui.simRound].filter(e => !e.manual && e.online) || []); if (e) { e.online = false; log('laptop', `${e.name} went offline`); } },
+  back() { const e = S.entries[ui.simRound].find(e => !e.manual && !e.online); if (e) { e.online = true; log('laptop', `${e.name} reconnected (same seat)`); } },
+  phones(d) { S.phones = Math.max(0, S.phones + +d); },
+  vote(n) { for (let i = 0; i < +n; i++) simVoteOnce(); log('phones', `${n} vote(s) cast`); },
+  change() {
+    const rid = S.current, vs = Object.keys(S.votes[rid]), es = S.entries[rid]; if (!vs.length || es.length < 2) return;
+    const v = pick(vs), old = S.votes[rid][v]; S.votes[rid][v] = pick(es.filter(e => e.id !== old)).id; log('phones', 'a phone changed its pick (last vote wins)');
+  },
+  tie() {
+    const rid = S.current, t = tally(S); if (t.rows.length < 2) return;
+    const [a, b] = [t.rows[0].e.id, t.rows[1].e.id];
+    let diff = t.rows[0].n - t.rows[1].n;
+    for (const [v, eid] of Object.entries(S.votes[rid])) { if (diff < 2) break; if (eid === a) { S.votes[rid][v] = b; diff -= 2; } }
+    if (diff === 1) { S.votes[rid]['v' + SIM.voter++] = b; S.phones++; }
+    log('phones', 'votes nudged into a tie at the top');
+  },
+  net(which) {
+    NET[which] = !NET[which];
+    SNAP[which] = NET[which] ? S : structuredClone(S);
+    log('sim', `${which === 'host' ? 'Host console' : 'Stage'} ${NET[which] ? 'reconnected (gets a fresh snapshot)' : 'lost its connection'}`);
+  },
+  reset(c) { seed(c === 'claimed'); },
+  popout() {
+    stageWin = window.open(`${location.pathname}?view=stage&stage=${stageV}`, 'citd-stage', 'width=1280,height=760');
+    log('sim', 'Stage popped out into its own window (drag it to a second screen)');
+  },
+};
+
+// ======================================================================
+// Rendering helpers
+// ======================================================================
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function fmt(ms) { const s = Math.max(0, Math.ceil(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+const joinUrl = X => `https://${X.comp.url}#${X.comp.joinCode}`;
+const qrCache = {};
+function qrSvg(text, size) {
+  let d = qrCache[text];
+  if (!d) {
+    const q = qrcode(0, 'M'); q.addData(text); q.make();
+    const n = q.getModuleCount(); let p = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) p += `M${c + 4} ${r + 4}h1v1h-1z`;
+    d = qrCache[text] = { n: n + 8, p };
+  }
+  return `<svg class="qr" width="${size}" height="${size}" viewBox="0 0 ${d.n} ${d.n}" shape-rendering="crispEdges"><rect width="${d.n}" height="${d.n}" fill="#fff"/><path d="${d.p}" fill="#000"/></svg>`;
+}
+function readyText(st) {
+  if (!st.total) return 'nobody yet';
+  const p = [`${st.ready} ready`];
+  if (st.offline) p.push(`${st.offline} offline`);
+  if (st.hand) p.push(`${st.hand} by hand`);
+  if (st.stale) p.push(`<span class="warn">${st.stale} stale</span>`);
+  return p.join(' · ');
+}
+function revCell(X, rid, e) {
+  if (e.manual) return '<span class="chip hand">added by hand</span>';
+  if (isStale(X, rid, e)) return `<span class="chip stale" title="Older than the newest Revision seen for this Round">⚠ Rev ${e.rev} · newest is Rev ${maxRev(X, rid)}</span>`;
+  return `<span class="muted">Rev ${e.rev}</span>`;
+}
+const dotOf = e => e.manual ? '<span class="dot hand" title="Added by hand: no laptop, votable, no reactions"></span>' : `<span class="dot ${e.online ? '' : 'off'}" title="${e.online ? 'Connected' : 'Offline'}"></span>`;
+function controlsFor(X) {
+  const t = tally(X);
+  switch (X.phase) {
+    case 'upcoming': return { primary: { act: 'start', label: '▶ Start Round' }, sec: [], dur: true, hint: 'The Stage shows “up next” and the Roster.' };
+    case 'running': return { primary: null, sec: [{ act: 'addTime', arg: 30000, label: '+30 s' }, { act: 'addTime', arg: 60000, label: '+1 min' }, { act: 'endEarly', label: '■ End early', danger: true }], hint: 'No pause. The timer runs on the server and survives this console closing.' };
+    case 'timesup': return { primary: { act: 'openVoting', label: '🗳 Open voting' }, sec: [{ act: 'rerun', label: 'Back to up next' }], hint: 'Wait for the Reveals, then open voting.' };
+    case 'voting': return { primary: { act: 'closeVoting', label: 'Close voting & show results' }, sec: [], hint: `${t.total} vote${t.total === 1 ? '' : 's'} · ${X.phones} phones connected. Only you see the live tally; the Stage shows turnout.` };
+    case 'results': return { primary: { act: 'reopen', label: 'Reopen voting' }, sec: [{ act: 'rerun', label: 'Back to up next' }], hint: t.tie ? 'Tie at the top. Settle it in the room.' : 'The Stage shows the ranking. Announce the winner.' };
+    default: return { primary: null, sec: [], hint: '' };
+  }
+}
+const btn = (c, cls = '') => c ? `<button class="btn ${c.danger ? 'danger' : ''} ${cls}" data-act="${c.act}" ${c.arg != null ? `data-arg="${c.arg}"` : ''}>${c.label}</button>` : '';
+const clockOrVotes = X => showVotes(X) ? `<div class="clock">${tally(X).total}<span class="muted" style="font-size:.32em;font-weight:600"> votes</span></div>` : '<div class="clock" data-clock="host"></div>';
+const showVotes = X => ['voting', 'results'].includes(X.phase);
+
+// ======================================================================
+// Host console — claim screen (shared by all variants)
+// ======================================================================
+function hostClaim(X) {
+  return `<div class="claim">
+    <h2>Claim this Competition</h2>
+    <div class="muted">This Host console link carries everything the claim needs. The Organizer key is asked for once and never stored.</div>
+    <dl><dt>Competition</dt><dd>${esc(X.comp.name)}</dd><dt>Join code</dt><dd class="mono">${X.comp.joinCode}</dd>
+      <dt>Rounds</dt><dd>${X.rounds.map(r => esc(r.name)).join(', ')}</dd><dt>Host secret</dt><dd class="mono">••••••••••••</dd><dt>Contestant token</dt><dd class="mono">••••••••••••</dd></dl>
+    <label>Organizer key<input id="claimkey" type="password" data-model="claimKey" value="${esc(ui.claimKey)}" placeholder="from whoever runs this Worker"></label>
+    ${ui.claimErr ? `<div class="err">${esc(ui.claimErr)}</div>` : ''}
+    <button class="btn primary" data-act="claim">Claim</button>
+    <p class="muted" style="font-size:12px;margin-top:14px">Laptops that opened their Round package already keep retrying silently and appear once you claim.</p>
+  </div>`;
+}
+
+// ======================================================================
+// Host A — Control desk
+// ======================================================================
+function hostA(X) {
+  const cur = roundOf(X);
+  const top = `<div class="hA-top"><span class="brand">CITD Host</span><span>${esc(X.comp.name)}</span><span class="sp"></span>
+    <span class="muted">Join <b class="mono" style="color:#e9e9ee">${X.comp.joinCode}</b></span><span class="muted">📱 ${X.phones} phones</span>
+    <span>${NET.host ? '<span class="dot"></span> live' : '<span class="dot off"></span> offline'}</span><button class="btn sm ghost">Copy Stage link</button></div>`;
+  const rail = `<nav class="hA-rail"><div class="rail-h">On the Stage</div>
+    <button class="rail-item ${!X.current ? 'on' : ''}" data-act="pick" data-arg=""><b>Welcome screen</b><small>No Round. Join code and QR.</small></button>
+    <div class="rail-h" style="margin-top:8px">Rounds</div>
+    ${X.rounds.map(r => `<button class="rail-item ${X.current === r.id ? 'on' : ''}" data-act="pick" data-arg="${r.id}">
+      <span><b>${esc(r.name)}</b> ${X.current === r.id ? `<span class="chip ph-${X.phase}">${PH[X.phase]}</span>` : ''}</span><small>${readyText(stats(X, r.id))}</small></button>`).join('')}
+  </nav>`;
+  let main;
+  if (!cur) main = `<div class="hA-main"><div class="hA-head"><h1>Welcome screen</h1><span class="chip ph-idle">No Round</span></div>
+    <div class="hA-ctl"><div class="hint" style="flex-basis:auto">The Stage shows the Competition name, Join code and QR. Pick a Round on the left to put it up next.</div></div></div>`;
+  else {
+    const c = controlsFor(X), t = tally(X), i = LIFE.indexOf(X.phase), st = stats(X, cur.id);
+    const byId = new Map(t.rows.map(r => [r.e.id, r]));
+    main = `<div class="hA-main">
+      <div class="hA-head"><h1>${esc(cur.name)}</h1><span class="chip ph-${X.phase}">${PH[X.phase]}</span></div>
+      <div class="stepper">${LIFE.map((p, j) => `<span class="${j < i ? 'done' : j === i ? 'now' : ''}">${PH[p]}</span>`).join('')}</div>
+      <div class="hA-ctl">
+        ${clockOrVotes(X)}
+        <div class="btns">
+          ${c.dur ? `<label class="dur"><input id="dur" type="number" min="1" max="90" value="${X.durationMs / 60e3}" data-change="setDur"> min</label>` : ''}
+          ${btn(c.primary, 'primary')} ${c.sec.map(s => btn(s)).join(' ')}
+        </div>
+        <div class="hint">${c.hint}</div>
+      </div>
+      <section class="hA-sec"><h2>Roster <span style="text-transform:none;letter-spacing:0;font-weight:400">${readyText(st)}</span></h2>
+        <table class="roster"><tr><th></th><th>Name</th><th>Revision</th>${showVotes(X) ? '<th colspan="2">Live tally (Host only)</th>' : ''}<th></th></tr>
+        ${X.entries[cur.id].map(e => { const r = byId.get(e.id);
+          return `<tr class="${e.online || e.manual ? '' : 'off'} ${showVotes(X) && r.lead ? 'lead' : ''}"><td style="width:1%">${dotOf(e)}</td><td class="nm">${esc(e.name)}</td><td>${revCell(X, cur.id, e)}</td>
+          ${showVotes(X) ? `<td class="w"><div class="bar"><i style="width:${t.max ? r.n / t.max * 100 : 0}%"></i></div></td><td class="n">${r.n}</td>` : ''}
+          <td style="width:1%"><button class="x" data-act="remove" data-arg="${cur.id}:${e.id}" title="Remove from Roster">✕</button></td></tr>`; }).join('')}
+        ${X.entries[cur.id].length ? '' : `<tr><td colspan="6" class="muted">Nobody has opened ${esc(cur.name)} yet.</td></tr>`}
+        </table>
+        <div class="addrow" style="margin-top:8px"><input id="add-${cur.id}" placeholder="Add a Contestant by hand (laptop never connected)" data-model="addName" data-arg="${cur.id}" value="${esc(ui.addName[cur.id] || '')}"><button class="btn" data-act="addEntry" data-arg="${cur.id}">Add</button></div>
+      </section></div>`;
+  }
+  return top + `<div class="hA-body">${rail}${main}</div>`;
+}
+
+// ======================================================================
+// Host B — Remote (phone)
+// ======================================================================
+function hostB(X) {
+  const cur = roundOf(X), c = controlsFor(X), t = tally(X);
+  const head = `<header><select data-change="pick">
+      <option value="" ${!X.current ? 'selected' : ''}>Welcome screen</option>
+      ${X.rounds.map(r => { const st = stats(X, r.id); return `<option value="${r.id}" ${X.current === r.id ? 'selected' : ''}>${esc(r.name)} — ${st.ready} ready${st.stale ? ', ' + st.stale + ' stale' : ''}</option>`; }).join('')}
+    </select>${NET.host ? '<span class="dot"></span>' : '<span class="dot off"></span>'}</header>`;
+  if (!cur) return `<div class="hB">${head}<div class="hB-hero"><span class="chip ph-idle">Welcome screen</span><div style="margin-top:14px" class="muted">The Stage shows the Join code and QR.<br>Pick a Round above to put it up next.</div></div>
+    <footer>Join ${X.comp.joinCode} · ${X.phones} phones</footer></div>`;
+  const st = stats(X, cur.id), byId = new Map(t.rows.map(r => [r.e.id, r]));
+  return `<div class="hB">${head}
+    <div class="hB-hero"><span class="chip ph-${X.phase}">${PH[X.phase]}</span>${clockOrVotes(X)}<div class="rn">${esc(cur.name)}</div></div>
+    ${c.dur ? `<div class="hB-dur"><button class="btn" data-act="durDelta" data-arg="-1">−</button><b>${X.durationMs / 60e3} min</b><button class="btn" data-act="durDelta" data-arg="1">+</button></div>` : ''}
+    ${c.primary ? `<button class="hB-primary" data-act="${c.primary.act}">${c.primary.label}</button>` : ''}
+    ${c.sec.length ? `<div class="hB-sec">${c.sec.map(s => btn(s)).join('')}</div>` : ''}
+    <div class="hB-hint">${c.hint}</div>
+    ${showVotes(X) ? `<div class="hB-tally">${t.rows.map(r => `<div class="r ${r.lead ? 'lead' : ''}"><b>${esc(r.e.name)}</b><span class="mono">${r.n}</span><div class="bar"><i style="width:${t.max ? r.n / t.max * 100 : 0}%"></i></div></div>`).join('')}</div>` : ''}
+    <details ${showVotes(X) ? '' : 'open'}><summary>Roster <small>${readyText(st)}</small></summary>
+      <ul>${X.entries[cur.id].map(e => `<li class="${e.online || e.manual ? '' : 'off'}">${dotOf(e)}<span class="nm">${esc(e.name)}</span>${isStale(X, cur.id, e) ? `<span class="chip stale">⚠ Rev ${e.rev}</span>` : e.manual ? '<span class="chip hand">by hand</span>' : ''}<button class="x" data-act="remove" data-arg="${cur.id}:${e.id}">✕</button></li>`).join('')}</ul>
+      <div class="addrow"><input id="add-${cur.id}" placeholder="Add by hand" data-model="addName" data-arg="${cur.id}" value="${esc(ui.addName[cur.id] || '')}"><button class="btn" data-act="addEntry" data-arg="${cur.id}">Add</button></div>
+    </details>
+    <footer>Join ${X.comp.joinCode} · ${X.phones} phones</footer></div>`;
+}
+
+// ======================================================================
+// Host C — Rounds board
+// ======================================================================
+function hostC(X) {
+  const cur = roundOf(X), c = controlsFor(X), t = tally(X);
+  const byId = new Map(t.rows.map(r => [r.e.id, r]));
+  const transport = `<div class="hC-transport">
+      <div class="now"><small>On the Stage</small><b>${cur ? esc(cur.name) : 'Welcome screen'} <span class="chip ph-${X.phase}">${PH[X.phase]}</span></b></div>
+      ${cur ? clockOrVotes(X) : ''}
+      ${c.dur ? `<label class="dur"><input id="dur" type="number" min="1" max="90" value="${X.durationMs / 60e3}" data-change="setDur"> min</label>` : ''}
+      ${btn(c.primary, 'primary')} ${c.sec.map(s => btn(s)).join(' ')}
+      <span class="sp"></span>
+      ${cur ? '<button class="btn sm ghost" data-act="pick" data-arg="">Clear Stage</button>' : ''}
+      <div class="meta">Join <b class="mono" style="color:#e9e9ee">${X.comp.joinCode}</b> · 📱 ${X.phones}<br>${NET.host ? '<span class="dot"></span> live' : '<span class="dot off"></span> offline'}</div>
+      ${c.hint && cur ? `<div class="muted" style="flex-basis:100%;font-size:12px">${c.hint}</div>` : ''}
+    </div><div class="hC-tbar"><i data-bar="host"></i></div>`;
+  const cols = X.rounds.map(r => {
+    const on = X.current === r.id, st = stats(X, r.id);
+    return `<div class="col ${on ? 'on' : ''}">
+      <h3>${esc(r.name)} ${on ? `<span class="chip ph-${X.phase}">${PH[X.phase]}</span>` : `<button class="btn sm" data-act="pick" data-arg="${r.id}">Put on Stage</button>`}</h3>
+      <div class="cst">${readyText(st)}</div>
+      ${X.entries[r.id].map(e => { const v = on && showVotes(X) ? byId.get(e.id) : null;
+        return `<div class="card ${e.online || e.manual ? '' : 'off'} ${v && v.lead ? 'lead' : ''}">${dotOf(e)}<span class="nm">${esc(e.name)}</span>
+          ${v ? `<span class="n">${v.n}</span>` : isStale(X, r.id, e) ? `<span class="chip stale" title="Newest seen: Rev ${st.newest}">⚠ Rev ${e.rev}</span>` : e.manual ? '<span class="chip hand">hand</span>' : `<span class="muted" style="font-size:11px">Rev ${e.rev}</span>`}
+          <button class="x" data-act="remove" data-arg="${r.id}:${e.id}">✕</button>
+          ${v ? `<div class="bar"><i style="width:${t.max ? v.n / t.max * 100 : 0}%"></i></div>` : ''}</div>`; }).join('') || '<div class="empty">nobody yet</div>'}
+      <div class="addrow"><input id="add-${r.id}" placeholder="+ by hand" data-model="addName" data-arg="${r.id}" value="${esc(ui.addName[r.id] || '')}"><button class="btn sm" data-act="addEntry" data-arg="${r.id}">Add</button></div>
+    </div>`;
+  }).join('');
+  return transport + `<div class="hC-board">${cols}</div>`;
+}
+
+// ======================================================================
+// Stage — shared
+// ======================================================================
+function stageWaiting(X) {
+  return `<div class="st"><div class="st-wait"><div class="big">${esc(X.comp.name)}</div><div class="sub">Waiting for the Host to open the Competition…</div></div>${stageOffline()}</div>`;
+}
+const stageOffline = () => NET.stage ? '' : '<div class="st-offline"><i></i>reconnecting</div>';
+const stageNames = X => X.current ? X.entries[X.current] : [];
+
+// Stage A — Giant clock
+function stageA(X) {
+  if (!X.claimed) return stageWaiting(X);
+  const r = roundOf(X), t = tally(X);
+  let center = '', bottomNames = true, smallJoin = true;
+  switch (X.phase) {
+    case 'idle':
+      bottomNames = false; smallJoin = false;
+      center = `<div class="stA-welcome">${qrSvg(joinUrl(X), 420)}<div><div class="kicker">Code in the Dark</div><div class="stA-huge">${esc(X.comp.name)}</div>
+        <div class="stA-sub">Join on your phone: <b class="cyan">${X.comp.url}</b> · code <b class="cyan">${X.comp.joinCode}</b></div></div></div>`; break;
+    case 'upcoming': center = `<div class="kicker">Up next</div><div class="stA-huge">${esc(r.name)}</div><div class="stA-dur clock" data-clock="stage"></div>`; break;
+    case 'running': center = `<div class="stA-clock clock" data-clock="stage"></div>`; break;
+    case 'timesup': center = `<div class="stA-huge pink">Time's up</div><div class="stA-sub">Hands off the keyboards. Reveals next.</div>`; break;
+    case 'voting':
+      smallJoin = false;
+      center = `<div class="stA-vote">${qrSvg(joinUrl(X), 440)}<div><div class="kicker">Vote now · ${esc(r.name)}</div><div class="count">${t.total}</div><div class="stA-sub">vote${t.total === 1 ? '' : 's'} so far</div>
+        <div class="stA-sub" style="margin-top:20px"><b class="cyan">${X.comp.url}</b> · <b class="cyan">${X.comp.joinCode}</b></div></div></div>`; break;
+    case 'results':
+      bottomNames = false;
+      center = `<div class="stA-rank">${t.tie ? '<div><span class="tiebadge">TIE</span></div>' : ''}${t.rows.map(row => `<div class="r ${row.lead ? 'lead' : ''}"><span class="pos">${row.rank}.</span><span>${esc(row.e.name)}</span>
+        <span class="b"><i style="width:${t.max ? row.n / t.max * 100 : 0}%"></i></span><span class="n">${row.n}</span></div>`).join('')}</div>`; break;
+  }
+  return `<div class="st stA">
+    <div class="stA-top"><span>${r ? `<b>${esc(r.name)}</b> · ${PH[X.phase]}` : ''}</span><span>${esc(X.comp.name)}</span></div>
+    <div class="stA-center">${center}</div>
+    <div class="stA-bottom"><div class="stA-names">${bottomNames ? stageNames(X).map(e => `<span>${esc(e.name)}</span>`).join('') : ''}</div>
+      ${smallJoin ? `<div class="stA-join"><div>React on your phone<b>${X.comp.joinCode}</b>${X.comp.url}</div>${qrSvg(joinUrl(X), 170)}</div>` : ''}</div>
+    ${stageOffline()}</div>`;
+}
+
+// Stage B — Join sidebar
+function stageB(X) {
+  if (!X.claimed) return stageWaiting(X);
+  const r = roundOf(X), t = tally(X);
+  const side = `<aside class="stB-side"><div class="t">${X.phase === 'voting' ? 'Vote on your phone' : 'React on your phone'}</div>${qrSvg(joinUrl(X), 400)}
+    <div class="u">${X.comp.url}</div><div class="code">${X.comp.joinCode}</div><div class="ph">${X.phones} phones in</div></aside>`;
+  const names = `<div class="stB-names">${stageNames(X).map(e => `<span>${esc(e.name)}</span>`).join('')}</div>`;
+  let body = '';
+  switch (X.phase) {
+    case 'idle': body = `<div class="kicker">Code in the Dark</div><div class="stB-big">${esc(X.comp.name)}</div><div class="stB-sub">Grab your phone and join →</div>`; break;
+    case 'upcoming': body = `<div class="kicker">Up next</div><div class="stB-big">${esc(r.name)}</div><div class="stB-sub"><span class="clock" data-clock="stage"></span> on the clock</div>${names}`; break;
+    case 'running': body = `<div class="stB-clock clock" data-clock="stage"></div>${names}`; break;
+    case 'timesup': body = `<div class="stB-big pink">Time's up</div><div class="stB-sub">Reveals next.</div>${names}`; break;
+    case 'voting': body = `<div class="kicker">Voting is open</div><div class="stB-big" style="font-size:300px">${t.total}</div><div class="stB-sub">vote${t.total === 1 ? '' : 's'}. Pick your favourite on your phone.</div>`; break;
+    case 'results': {
+      // last-to-first: lower ranks rise first, joint leaders arrive together, last
+      const ranks = [...new Set(t.rows.map(x => x.rank))].sort((a, b) => b - a);
+      body = `${t.tie ? '<div><span class="tiebadge">TIE</span></div>' : ''}<div class="stB-rank">${t.rows.map(row => {
+        const d = ranks.indexOf(row.rank) * 1.1 + (row.lead ? .9 : 0);
+        return `<div class="r ${row.lead ? 'lead' : ''}" style="animation-delay:${d}s"><span class="pos">${row.rank}.</span><span>${esc(row.e.name)}</span><span class="n">${row.n}</span></div>`; }).join('')}</div>`;
+    }
+  }
+  return `<div class="st stB"><main class="stB-main"><div class="stB-head"><span>${r ? `<b>${esc(r.name)}</b>` : ''}</span><span>${esc(X.comp.name)}</span></div>
+    <div class="stB-body">${body}</div></main>${side}${stageOffline()}</div>`;
+}
+
+// Stage C — Name tiles
+function stageC(X) {
+  if (!X.claimed) return stageWaiting(X);
+  const r = roundOf(X), t = tally(X), es = stageNames(X), byId = new Map(t.rows.map(x => [x.e.id, x]));
+  const foot = `<div class="stC-foot">${qrSvg(joinUrl(X), 140)}<span>${X.phase === 'voting' ? 'Vote' : 'React'} at ${X.comp.url} · <b>${X.comp.joinCode}</b></span></div>`;
+  const tiles = mode => `<div class="stC-tiles">${es.map(e => {
+    const v = byId.get(e.id);
+    if (mode === 'results') return `<div class="tile ${v.lead ? 'lead' : ''}"><div class="fill" style="height:${t.max ? v.n / t.max * 100 : 0}%"></div><div class="n">${v.n}</div>${v.lead ? '<span class="crown">👑</span>' : ''}<div class="nm">${esc(e.name)}</div></div>`;
+    return `<div class="tile ${mode === 'voting' ? 'q' : ''}"><div class="nm">${esc(e.name)}</div></div>`; }).join('')}</div>`;
+  let mid = '';
+  switch (X.phase) {
+    case 'idle': return `<div class="st stC"><div class="stC-mid"><div class="kicker">Code in the Dark</div><div class="big">${esc(X.comp.name)}</div><div class="sub">Grab your phone. Join below.</div></div>${foot}${stageOffline()}</div>`;
+    case 'upcoming': case 'running': case 'timesup': mid = tiles('plain'); break;
+    case 'voting': mid = tiles('voting') + `<div class="stC-overlay"><div class="kicker">Vote now</div><div class="big">${t.total}</div><div class="sub">vote${t.total === 1 ? '' : 's'} so far</div></div>`; break;
+    case 'results': mid = tiles('results'); break;
+  }
+  const kick = { upcoming: 'Up next', running: 'Coding in the dark', timesup: "Time's up · Reveals next", voting: 'Voting', results: t.tie ? 'Results · tie!' : 'Results' }[X.phase];
+  return `<div class="st stC"><div class="stC-bar"><i data-bar="stage"></i></div>
+    <div class="stC-head"><div class="rn"><small>${kick}</small>${esc(r.name)}</div><div class="clock" data-clock="stage"></div></div>
+    ${mid}${foot}${stageOffline()}</div>`;
+}
+
+// ======================================================================
+// Render
+// ======================================================================
+const HOSTR = { A: hostA, B: hostB, C: hostC }, STAGER = { A: stageA, B: stageB, C: stageC };
+let stageWin = null;
+function setHTML(el, html) {
+  if (!el || el._html === html) return;
+  const a = document.activeElement, id = a && el.contains(a) ? a.id : null, sel = id && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null;
+  el.innerHTML = html; el._html = html;
+  if (id) { const n = document.getElementById(id); if (n) { n.focus(); if (sel) try { n.setSelectionRange(...sel); } catch (_) {} } }
+}
+function layout() {
+  const app = document.getElementById('app');
+  app.className = view;
+  app.innerHTML = (view !== 'stage' ? '<div id="hostpane" class="pane"></div>' : '') +
+    `<div id="rightpane" class="pane">${view === 'split' ? `<div class="frame-label"><span>Stage · venue monitor (1920×1080, scaled)</span><span id="stagelabel"></span></div>` : ''}
+      ${view !== 'host' ? '<div class="stage-frame"><div class="st-scale"></div></div>' : ''}${view !== 'stage' ? '<div id="sim"></div>' : ''}</div>`;
+  const f = document.querySelector('.stage-frame');
+  if (f) new ResizeObserver(fitStage).observe(f);
+}
+function fitStage() {
+  const f = document.querySelector('.stage-frame'); if (!f) return;
+  const k = Math.min(f.clientWidth / 1920, f.clientHeight / 1080);
+  f.firstElementChild.style.transform = `translate(${(f.clientWidth - 1920 * k) / 2}px, ${(f.clientHeight - 1080 * k) / 2}px) scale(${k})`;
+}
+function render() {
+  if (view !== 'stage') {
+    const X = SNAP.host, hp = document.getElementById('hostpane');
+    const inner = !X.claimed ? hostClaim(X) : HOSTR[hostV](X);
+    const banner = NET.host ? '' : '<div class="offline-banner">Connection lost — reconnecting… Controls are paused. The Round carries on on the server.</div>';
+    setHTML(hp, `<div class="host ${NET.host ? '' : 'offline'}">${banner}${hostV === 'B' && X.claimed ? `<div class="phone">${inner}</div>` : inner}</div>`);
+    renderSim();
+  }
+  if (view !== 'host') {
+    setHTML(document.querySelector('.st-scale'), STAGER[stageV](SNAP.stage));
+    const l = document.getElementById('stagelabel'); if (l) l.textContent = NET.stage ? '' : 'offline: frozen snapshot, clock keeps running';
+  }
+  renderSwitcher(); renderState(); updateClocks(); postToStage();
+}
+function updateClocks() {
+  document.querySelectorAll('[data-clock]').forEach(el => {
+    const X = SNAP[el.dataset.clock], p = X.phase, r = remaining(X);
+    const txt = p === 'running' ? fmt(r) : p === 'upcoming' ? fmt(X.durationMs) : p === 'timesup' ? '00:00' : '';
+    if (el.textContent !== txt) el.textContent = txt;
+    el.classList.toggle('last-min', p === 'running' && r <= 60e3 && r > 10e3);
+    el.classList.toggle('last-ten', p === 'running' && r <= 10e3);
+  });
+  document.querySelectorAll('[data-bar]').forEach(el => {
+    const X = SNAP[el.dataset.bar];
+    const f = X.phase === 'running' ? remaining(X) / X.totalMs : X.phase === 'upcoming' ? 1 : 0;
+    el.style.transform = `scaleX(${f})`;
+  });
+}
+function postToStage() { if (stageWin && !stageWin.closed) stageWin.postMessage({ citd: true, snap: SNAP.stage, online: NET.stage, vnow }, '*'); }
+
+function renderSim() {
+  const el = document.getElementById('sim'); if (!el) return;
+  const voting = S.phase === 'voting', rn = nameOf(ui.simRound);
+  setHTML(el, `<div class="sim"><h3>Venue simulator — prototype only</h3>
+    <div class="row"><b>Clock</b>${[1, 10, 60].map(n => `<button class="${speed === n ? 'on' : ''}" data-act="sim.speed" data-arg="${n}">${n}×</button>`).join('')}
+      <button data-act="sim.ff" ${S.phase === 'running' ? '' : 'disabled'}>⏩ to 0:15 left</button></div>
+    <div class="row"><b>Laptops</b><select data-change="sim.round">${S.rounds.map(r => `<option value="${r.id}" ${ui.simRound === r.id ? 'selected' : ''}>${esc(r.name)} (exported Rev ${SIM.rev[r.id]})</option>`).join('')}</select>
+      <button data-act="sim.laptop">+ opens file</button><button data-act="sim.stale">+ opens an old Rev</button>
+      <button data-act="sim.drop">one drops</button><button data-act="sim.back">one returns</button></div>
+    <div class="row"><b>Re-export</b><button data-act="sim.reexport">Organizer re-exports ${esc(rn)}</button><button data-act="sim.reopenNew">a stale laptop reopens the new file</button></div>
+    <div class="row"><b>Phones</b><span class="note">${S.phones} connected</span><button data-act="sim.phones" data-arg="10">+10</button><button data-act="sim.phones" data-arg="-10">−10</button></div>
+    <div class="row"><b>Votes</b><button data-act="sim.vote" data-arg="1" ${voting ? '' : 'disabled'}>+1</button><button data-act="sim.vote" data-arg="10" ${voting ? '' : 'disabled'}>+10</button>
+      <button data-act="sim.change" ${voting ? '' : 'disabled'}>a phone changes pick</button><button data-act="sim.tie" ${voting ? '' : 'disabled'}>force a tie</button>
+      ${voting ? '' : '<span class="note">only while voting is open</span>'}</div>
+    <div class="row"><b>Network</b><button class="${NET.host ? '' : 'on'}" data-act="sim.net" data-arg="host">Host console ${NET.host ? 'online' : 'OFFLINE'}</button>
+      <button class="${NET.stage ? '' : 'on'}" data-act="sim.net" data-arg="stage">Stage ${NET.stage ? 'online' : 'OFFLINE'}</button></div>
+    <div class="row"><b>Reset</b><button data-act="sim.reset" data-arg="claimed">mid-event</button><button data-act="sim.reset" data-arg="fresh">fresh, unclaimed</button>
+      ${view === 'split' ? '<button data-act="sim.popout">⧉ pop out Stage window</button>' : ''}</div>
+    <div class="last">${esc(LOG.slice(0, 3).join('\n')).replace(/\n/g, '<br>')}</div></div>`);
+}
+function renderSwitcher() {
+  const seg = (lbl, list, cur, act) => { const v = list.find(x => x.k === cur);
+    return `<div class="seg"><button data-act="${act}" data-arg="-1">‹</button><span class="label">${lbl} ${v.k} — ${v.name}</span><button data-act="${act}" data-arg="1">›</button></div>`; };
+  setHTML(document.getElementById('switcher'),
+    (view !== 'stage' ? seg('Host', HOSTS, hostV, 'ui.host') : '') + (view !== 'host' ? seg('Stage', STAGES, stageV, 'ui.stage') : '') +
+    (ui.remote ? '' : `<div class="seg">${['split', 'host', 'stage'].map(v => `<button class="${view === v ? 'on' : ''}" data-act="ui.view" data-arg="${v}">${v}</button>`).join('')}</div>
+    <button data-act="ui.state">State</button>`));
+}
+function renderState() {
+  const p = document.getElementById('statepanel'); if (!p.classList.contains('open')) return;
+  const dump = { ...S, votes: Object.fromEntries(Object.entries(S.votes).map(([k, v]) => [nameOf(k), Object.keys(v).length + ' votes'])) };
+  p.innerHTML = `<h4>Durable Object state</h4>${esc(JSON.stringify(dump, null, 1))}\n\n<h4>Event log</h4>${esc(LOG.join('\n'))}`;
+}
+
+// ======================================================================
+// Wiring
+// ======================================================================
+function cycle(list, cur, d) { const i = list.findIndex(x => x.k === cur); return list[(i + d + list.length) % list.length].k; }
+function syncUrl() {
+  const p = new URLSearchParams(); p.set('host', hostV); p.set('stage', stageV); if (view !== 'split') p.set('view', view);
+  history.replaceState(null, '', '?' + p);
+}
+const UIA = {
+  host(d) { hostV = cycle(HOSTS, hostV, +d); syncUrl(); },
+  stage(d) { stageV = cycle(STAGES, stageV, +d); syncUrl(); },
+  view(v) { view = v; syncUrl(); layout(); fitStage(); },
+  state() { document.getElementById('statepanel').classList.toggle('open'); },
+};
+async function run(act, arg) {
+  const [ns, name] = act.includes('.') ? act.split('.') : ['host', act];
+  if (ns === 'host') { if (!NET.host) return; await H[name](arg); }
+  else if (ns === 'sim') { if (name === 'round') ui.simRound = arg; else SIMA[name](arg); }
+  else if (ns === 'ui') UIA[name](arg);
+  render();
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el || el.tagName === 'SELECT') return;
+  run(el.dataset.act, el.dataset.arg);
+});
+document.addEventListener('change', e => { const el = e.target.closest('[data-change]'); if (el) run(el.dataset.change, el.value); });
+document.addEventListener('input', e => {
+  const el = e.target.closest('[data-model]'); if (!el) return;
+  if (el.dataset.model === 'addName') ui.addName[el.dataset.arg] = el.value; else ui[el.dataset.model] = el.value;
+});
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (e.key === 'Enter' && t.dataset && t.dataset.model === 'addName') return run('addEntry', t.dataset.arg);
+  if (e.key === 'Enter' && t.id === 'claimkey') return run('claim');
+  if (t.closest && t.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault(); const d = e.key === 'ArrowLeft' ? -1 : 1;
+    if (e.shiftKey || view === 'stage') UIA.stage(d); else if (view !== 'stage') UIA.host(d);
+    render();
+  }
+});
+function ask(title, body, ok, danger) {
+  const d = document.getElementById('dlg');
+  d.querySelector('h3').textContent = title; d.querySelector('p').textContent = body;
+  const b = d.querySelector('button[value=ok]'); b.textContent = ok; b.style.background = danger ? '#ff5a4f' : ''; b.style.borderColor = danger ? '#ff5a4f' : '';
+  d.returnValue = ''; d.showModal();
+  return new Promise(res => d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }));
+}
+// A popped-out Stage window only renders what its opener sends it (the Stage is read-only anyway).
+window.addEventListener('message', e => {
+  if (!e.data || !e.data.citd || e.source !== window.opener) return;
+  ui.remote = true; S = e.data.snap; SNAP = { host: S, stage: S }; NET.stage = e.data.online; vnow = e.data.vnow; render();
+});
+
+seed(true);
+layout(); fitStage(); render();
+setInterval(() => {
+  const real = performance.now();
+  if (!ui.remote) vnow += (real - lastReal) * speed;
+  lastReal = real;
+  if (!ui.remote && S.phase === 'running' && vnow >= S.endsAt) { S.phase = 'timesup'; S.endsAt = null; log('server', "time's up (Durable Object alarm)"); render(); }
+  updateClocks();
+  postToStage();
+}, 100);
+</script>
+</body>
+</html>
