@@ -112,24 +112,34 @@ test("Ctrl/Cmd-F searches your code", async ({ page }) => {
   expect(await editorText(page)).toBe("hello dark hello");
 });
 
-test("it looks like the original: vibrant_ink, 20px Press Start 2P, no active line or print margin", async ({
+test("it looks like the original: vibrant_ink, 20px monospace code, no active line, print margin or fold widgets", async ({
   page,
 }) => {
   await openPackage(page);
 
   await expect(page.locator("#editor")).toHaveClass(/ace-vibrant-ink/);
   await expect(page.locator("#editor")).toHaveCSS("font-size", "20px");
-  await expect(page.locator("#editor")).toHaveCSS("font-family", /Press Start 2P/);
+  await expect(page.locator("#editor")).not.toHaveCSS("font-family", /Press Start 2P/);
+  await expect(page.locator("body")).toHaveCSS("font-family", /Press Start 2P/);
   expect(await page.evaluate(() => document.fonts.check('20px "Press Start 2P"'))).toBe(true);
   await expect(page.locator(".ace_active-line")).toBeHidden();
   await expect(page.locator(".ace_print-margin")).toBeHidden();
 
-  // Press Start 2P glyphs are exactly 1em wide. The cursor only steps 20px per character
-  // if ACE measured the font after it loaded.
+  await page.keyboard.type("<div>");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("</div>");
+  await expect(page.locator(".ace_fold-widget")).toHaveCount(0);
+
+  // The cursor steps one glyph per character only if ACE measured the font it draws with.
+  const glyphWidth = await page.evaluate(() => {
+    const context = document.createElement("canvas").getContext("2d")!;
+    context.font = getComputedStyle(document.querySelector("#editor")!).font;
+    return context.measureText("abcdefghij").width / 10;
+  });
   const cursorX = async () => (await page.locator(".ace_cursor").boundingBox())!.x;
   const before = await cursorX();
   await page.keyboard.type("abcdefghij");
-  await expect.poll(cursorX).toBeCloseTo(before + 200, 0);
+  await expect.poll(cursorX).toBeCloseTo(before + 10 * glyphWidth, 0);
 });
 
 test("the bare template asks for a Round package from the prep page", async ({ page }) => {

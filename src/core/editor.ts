@@ -17,7 +17,7 @@ const UNSHIPPED_COMMANDS = [
 ];
 
 export async function startEditor(element: HTMLElement) {
-  // ACE measures glyph width once, so the font must be ready before it starts.
+  // ACE measures glyph width once, so the page font must be ready before it starts.
   await fontLoaded();
 
   const editor = ace.edit(element, {
@@ -25,9 +25,12 @@ export async function startEditor(element: HTMLElement) {
     useWorker: false,
     mode: "ace/mode/html",
     theme: "ace/theme/vibrant_ink",
+    // Code is in ACE's default monospace font, as in the original. Press Start 2P is for the
+    // rest of the page (Combo, badge, buttons).
     fontSize: 20,
-    fontFamily: '"Press Start 2P", monospace',
     showPrintMargin: false,
+    // The original has no fold widgets in the gutter.
+    showFoldWidgets: false,
     highlightActiveLine: false,
     // The editor may move text you've written, but never writes anything for you:
     // no auto-closing tags, brackets or quotes.
