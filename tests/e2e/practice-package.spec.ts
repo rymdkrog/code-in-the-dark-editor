@@ -1,6 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test as base, type Page } from "@playwright/test";
+import { fillTemplate } from "../../src/round-package/fill-template.ts";
+import type { RoundData } from "../../src/round-package/round-data.ts";
 
 const dist = (file: string) => fileURLToPath(new URL(`../../dist/${file}`, import.meta.url));
 const PRACTICE = dist("citd-practice.html");
@@ -10,12 +12,14 @@ const ALLOWED_SCHEMES = ["file:", "data:", "blob:"];
 
 // The no-network gate. Every test runs with the network off, records every request the page
 // makes, every CSP violation and every error it reports, and fails on anything that leaves
-// file:, data: or blob:.
+// file:, data: or blob:. It also fails on any prompt(), confirm() or alert(): Chromium leaves
+// fullscreen for them, so the Core Editor uses <dialog> instead.
 const test = base.extend<{ gate: void }>({
   gate: [
     async ({ context }, use) => {
       const offending: string[] = [];
       const errors: string[] = [];
+      const browserDialogs: string[] = [];
       await context.setOffline(true);
       context.on("request", (request) => {
         if (!ALLOWED_SCHEMES.includes(new URL(request.url()).protocol)) offending.push(request.url());
@@ -24,6 +28,10 @@ const test = base.extend<{ gate: void }>({
         if (message.type() === "error") errors.push(message.text());
       });
       context.on("weberror", (error) => errors.push(String(error.error())));
+      context.on("dialog", (dialog) => {
+        if (dialog.type() !== "beforeunload") browserDialogs.push(`${dialog.type()}: ${dialog.message()}`);
+        void dialog.dismiss();
+      });
       // A request the package's CSP blocks never reaches the network, so it never shows up
       // as a request. Count the violation itself.
       await context.exposeBinding("reportCspViolation", (_source, uri: string) => offending.push(`CSP: ${uri}`));
@@ -37,6 +45,7 @@ const test = base.extend<{ gate: void }>({
 
       expect(offending, "requests other than file:, data: or blob:").toEqual([]);
       expect(errors, "errors reported by the page").toEqual([]);
+      expect(browserDialogs, "prompt(), confirm() or alert()").toEqual([]);
     },
     { auto: true },
   ],
@@ -44,9 +53,20 @@ const test = base.extend<{ gate: void }>({
 
 async function openPackage(page: Page, file = PRACTICE) {
   await page.goto(pathToFileURL(file).href);
-  // The editor takes focus by itself, so the Contestant can type straight away.
+  await enterName(page, "Anna");
+  // The editor takes focus back by itself, so the Contestant can type straight away.
   await expect(page.locator("#editor textarea")).toBeFocused();
 }
+
+async function enterName(page: Page, name: string) {
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill(name);
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+}
+
+const readRoundData = (html: string): RoundData =>
+  JSON.parse(html.match(/<script type="application\/json" id="round">([\s\S]*?)<\/script>/)![1]!);
 
 const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -190,10 +210,94 @@ for (const file of [PRACTICE, TEMPLATE]) {
 
 test("the practice package is a pure offline Round", async () => {
   const html = readFileSync(PRACTICE, "utf8");
-  const round = JSON.parse(html.match(/<script type="application\/json" id="round">([\s\S]*?)<\/script>/)![1]!);
+  const round = readRoundData(html);
 
   expect(round.roundName).toBe("Practice");
   expect(round.audience).toBeUndefined();
   expect(html).not.toContain("connect-src");
   expect(html).not.toMatch(/(src|href)="(https?:)?\/\//);
+});
+
+test("on first open a dialog asks for your name, shows the Round and puts it on the badge", async ({ page }) => {
+  await page.goto(pathToFileURL(PRACTICE).href);
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Practice");
+  await enterName(page, "Anna");
+
+  await expect(page.getByRole("button", { name: "Anna · Practice" })).toBeVisible();
+  await expect(page.locator("#editor textarea")).toBeFocused();
+});
+
+test('the name dialog refuses an empty name, and "null"', async ({ page }) => {
+  await page.goto(pathToFileURL(PRACTICE).href);
+  const dialog = page.getByRole("dialog");
+
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  for (const refused of ["   ", "null", " null "]) {
+    await dialog.getByRole("textbox").fill(refused);
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: /· Practice$/ })).toBeHidden();
+});
+
+test("the first name dialog can't be dismissed", async ({ page }) => {
+  await page.goto(pathToFileURL(PRACTICE).href);
+
+  // Twice: Chromium lets a second Esc close a dialog that refused the first.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("the name is remembered, so reopening doesn't ask again", async ({ page }) => {
+  await openPackage(page);
+
+  await page.reload();
+
+  await expect(page.getByRole("button", { name: "Anna · Practice" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.locator("#editor textarea")).toBeFocused();
+});
+
+test("the name carries to the next Round where the browser shares storage", async ({ page, browserName }, testInfo) => {
+  test.skip(browserName === "firefox", "Firefox keeps one store per file, so each file asks again");
+  const practice = readRoundData(readFileSync(PRACTICE, "utf8"));
+  const heat2 = testInfo.outputPath("citd-heat-2.html");
+  writeFileSync(
+    heat2,
+    fillTemplate(readFileSync(TEMPLATE, "utf8"), { ...practice, roundName: "Heat 2", roundId: "r_heat2" }),
+  );
+  await openPackage(page);
+
+  await page.goto(pathToFileURL(heat2).href);
+
+  await expect(page.getByRole("button", { name: "Anna · Heat 2" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeHidden();
+});
+
+test("clicking the badge edits the name, and Esc keeps the old one", async ({ page }) => {
+  await openPackage(page);
+  const dialog = page.getByRole("dialog");
+
+  await page.getByRole("button", { name: "Anna · Practice" }).click();
+  await expect(dialog).toContainText("Practice");
+  await expect(dialog.getByRole("textbox")).toHaveValue("Anna");
+  await enterName(page, "Anna B");
+  await expect(page.getByRole("button", { name: "Anna B · Practice" })).toBeVisible();
+  await expect(page.locator("#editor textarea")).toBeFocused();
+
+  await page.getByRole("button", { name: "Anna B · Practice" }).click();
+  await dialog.getByRole("textbox").fill("Bob");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("button", { name: "Anna B · Practice" })).toBeVisible();
+  await expect(page.locator("#editor textarea")).toBeFocused();
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Anna B · Practice" })).toBeVisible();
 });
