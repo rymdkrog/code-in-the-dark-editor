@@ -25,3 +25,7 @@ Fake: the Durable Object, the sockets, the other phones and the Contestant lapto
 7. **The emoji set is fixed by the software:** 6 by default (🔥 👏 😂 😱 🤯 ❤️). The simulator lets you try 4 or 8.
 8. **Taps are coalesced with a leading edge.** The first tap after a pause goes out at once, and the taps inside the window ride the next message as counts (`{"🔥":7}`). **A 250 ms window isn't enough.** If 300 phones send at its 4 msg/s cap for 75 minutes, that's ≈ 270,000 requests (over Free's 100,000/day) and a peak of 1,200 msg/s (over the ~1,000/s soft limit). **A 1 s window keeps even that worst case inside Free:** ≈ 67,500 requests and a peak of 300 msg/s. The cost is that a burst lands as a clump about once a second.
 9. **The phone shows its own burst at the tap point immediately**, plus a tiny vibration on Android. The feedback never waits for the network.
+
+## Verdict
+
+**Reacting uses A (Roster rows) and voting uses B's voting screen**, with **four fixed emoji (🔥 👏 😂 😱)** and **no coalescing**: one message per tap, on Workers Free, with the quota risk accepted. Every choice above stands. The full resolution is on the Wayfinder ticket **What does the Audience phone page look like?** (#14).
