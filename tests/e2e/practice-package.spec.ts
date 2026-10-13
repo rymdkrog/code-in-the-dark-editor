@@ -1,62 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { expect, test as base, type Page } from "@playwright/test";
+import { pathToFileURL } from "node:url";
+import { expect } from "@playwright/test";
 import { fillTemplate } from "../../src/round-package/fill-template.ts";
 import type { RoundData } from "../../src/round-package/round-data.ts";
-import { gateNetwork } from "./no-network-gate.ts";
-
-const dist = (file: string) => fileURLToPath(new URL(`../../dist/${file}`, import.meta.url));
-const PRACTICE = dist("citd-practice.html");
-const TEMPLATE = dist("core-editor.html");
-
-// Every test runs behind the no-network gate.
-const test = base.extend<{ gate: void }>({
-  gate: [
-    async ({ context }, use) => {
-      const check = await gateNetwork(context);
-      await use();
-      check();
-    },
-    { auto: true },
-  ],
-});
-
-async function openPackage(page: Page, file = PRACTICE) {
-  await page.goto(pathToFileURL(file).href);
-  await enterName(page, "Anna");
-  // The editor takes focus back by itself, so the Contestant can type straight away.
-  await expect(page.locator("#editor textarea")).toBeFocused();
-}
-
-async function enterName(page: Page, name: string) {
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("textbox").fill(name);
-  await page.keyboard.press("Enter");
-  await expect(dialog).toBeHidden();
-}
+import { editorText, editorTextWithCaret, enterName, nextFrame, openPackage, PRACTICE, TEMPLATE, test } from "./package.ts";
 
 const readRoundData = (html: string): RoundData =>
   JSON.parse(html.match(/<script type="application\/json" id="round">([\s\S]*?)<\/script>/)![1]!);
-
-const nextFrame = (page: Page) =>
-  page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-
-const editorText = (page: Page) =>
-  page.evaluate(() => (document.querySelector("#editor") as unknown as EditorElement).env.editor.getValue());
-
-/** The editor's text with `|` at the caret. */
-const editorTextWithCaret = (page: Page) =>
-  page.evaluate(() => {
-    const { editor } = (document.querySelector("#editor") as unknown as EditorElement).env;
-    const { row, column } = editor.getCursorPosition();
-    const lines = editor.getValue().split("\n");
-    lines[row] = `${lines[row]!.slice(0, column)}|${lines[row]!.slice(column)}`;
-    return lines.join("\n");
-  });
-
-interface EditorElement {
-  env: { editor: { getValue(): string; getCursorPosition(): { row: number; column: number } } };
-}
 
 test("the practice package opens from file:// offline and takes typing", async ({ page }) => {
   await openPackage(page);
@@ -162,6 +112,7 @@ test("the bare template asks for a Round package from the prep page", async ({ p
 
   await expect(page.getByText("make a Round package with the prep page")).toBeVisible();
   await expect(page.locator("#editor.ace_editor")).toHaveCount(0);
+  await expect(page.getByText("Combo")).toBeHidden();
 });
 
 for (const file of [PRACTICE, TEMPLATE]) {
