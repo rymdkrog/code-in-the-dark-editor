@@ -155,6 +155,7 @@ test("it looks like the original: vibrant_ink, 20px monospace code, no active li
   await expect(page.locator(".ace_fold-widget")).toHaveCount(0);
 
   // The cursor steps one glyph per character only if ACE measured the font it draws with.
+  // A wrong measurement is off by pixels per character; the cursor itself sits on whole pixels.
   const glyphWidth = await page.evaluate(() => {
     const context = document.createElement("canvas").getContext("2d")!;
     context.font = getComputedStyle(document.querySelector("#editor")!).font;
@@ -163,7 +164,7 @@ test("it looks like the original: vibrant_ink, 20px monospace code, no active li
   const cursorX = async () => (await page.locator(".ace_cursor").boundingBox())!.x;
   const before = await cursorX();
   await page.keyboard.type("abcdefghij");
-  await expect.poll(cursorX).toBeCloseTo(before + 10 * glyphWidth, 0);
+  await expect.poll(async () => Math.abs((await cursorX()) - (before + 10 * glyphWidth))).toBeLessThan(1.5);
 });
 
 test("the bare template asks for a Round package from the prep page", async ({ page }) => {
