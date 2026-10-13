@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- Source of the practice Reference. Regenerate reference.png and assets/ with
+     `node scripts/make-practice-fixture.ts`. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Night Market</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #1b1f3b; color: #f4f1ea; font: 18px/1.5 Georgia, serif; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 24px 64px; background: #ff6b6b; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: 2px; text-transform: uppercase; color: #1b1f3b; }
+  nav a { margin-left: 32px; color: #1b1f3b; text-decoration: none; font-weight: bold; }
+  .hero { display: flex; align-items: center; gap: 64px; padding: 96px 64px; }
+  .hero img { width: 240px; height: 240px; }
+  .hero h2 { margin: 0 0 16px; font-size: 56px; line-height: 1.1; color: #ffe66d; }
+  .hero p { max-width: 520px; margin: 0 0 32px; }
+  .button { display: inline-block; padding: 16px 32px; background: #4ecdc4; color: #1b1f3b; font-weight: bold; text-decoration: none; border-radius: 4px; }
+  footer { position: absolute; bottom: 0; width: 100%; padding: 24px 64px; border-top: 4px solid #ff6b6b; font-size: 14px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Night Market</h1>
+    <nav><a href="#">Stalls</a><a href="#">Map</a><a href="#">Visit</a></nav>
+  </header>
+  <section class="hero">
+    <img src="assets/moon.png" alt="">
+    <div>
+      <h2>Open after dark</h2>
+      <p>Street food, lanterns and late music. Every Friday from sunset until the last stall packs up.</p>
+      <a class="button" href="#">Plan your visit</a>
+    </div>
+  </section>
+  <footer>Harbour Square &middot; Fridays 19&ndash;01</footer>
+</body>
+</html>

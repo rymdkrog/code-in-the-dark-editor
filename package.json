@@ -1,0 +1,36 @@
+{
+  "name": "code-in-the-dark-editor",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A blind, power-mode, single-HTML-file editor for Code in the Dark competitions",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/build-practice.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p worker/tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "worker:dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@fontsource/press-start-2p": "5.3.0",
+    "ace-builds": "1.44.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261013.1",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.12.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^5.0.4",
+    "wrangler": "^4.150.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "competitionName": "Code in the Dark",
+  "roundName": "Practice",
+  "roundId": "practice-6d1f0b9a4c",
+  "shake": true,
+  "instructions": {
+    "rules": "Recreate the Reference using only HTML and CSS.\nNo preview: you see your result for the first time at the Reveal.\nNo help: no other tabs, no tools, no internet.\nUse the assets by file name, for example <img src=\"moon.png\">.",
+    "note": "This is a practice Round. Your code stays on this laptop.",
+    "colours": [
+      { "hex": "#1B1F3B", "label": "Night" },
+      { "hex": "#FF6B6B", "label": "Lantern" },
+      { "hex": "#FFE66D", "label": "Moon" },
+      { "hex": "#4ECDC4", "label": "Button" },
+      { "hex": "#F4F1EA", "label": "Text" }
+    ]
+  },
+  "assets": ["moon.png"]
+}

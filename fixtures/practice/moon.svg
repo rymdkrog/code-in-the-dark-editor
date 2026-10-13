@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <!-- Source of assets/moon.png. -->
+  <circle cx="120" cy="120" r="110" fill="#ffe66d"/>
+  <circle cx="160" cy="95" r="95" fill="#1b1f3b"/>
+  <circle cx="70" cy="150" r="12" fill="#f2c94c"/>
+  <circle cx="100" cy="190" r="8" fill="#f2c94c"/>
+</svg>

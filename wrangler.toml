@@ -1,0 +1,5 @@
+# The Audience layer. Deploy the closed instance only by hand (`wrangler deploy`),
+# never from CI on merge or tag: a deploy drops every socket mid-Competition.
+name = "code-in-the-dark"
+main = "worker/index.ts"
+compatibility_date = "2026-10-01"
