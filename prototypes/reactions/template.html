@@ -131,8 +131,9 @@ body.revealing .button-bar, body.revealing .power-mode-indicator, body.revealing
 .reveal .r-cards div:nth-child(2) { margin-top: 30px; }
 
 /* ---- Reaction overlay (Enhancement) ---- */
-.reaction-overlay { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 45; }
-.reaction-overlay.over-reveal { z-index: 80; }
+/* Behind the name badge (40) and the Reference thumbnail (50), so whose screen it is stays readable */
+.reaction-overlay { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 35; }
+.reaction-overlay.over-reveal { z-index: 65; } /* over the Reveal (60), still behind the badge (70) */
 .reaction-overlay.quiet { opacity: 0.45; }
 .hype-rail {
   position: absolute; z-index: 45; bottom: 22px; left: 50%; display: flex; gap: 6px;

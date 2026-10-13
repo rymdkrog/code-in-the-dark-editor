@@ -1,5 +1,7 @@
 # PROTOTYPE — Reactions on the Contestant's screen (throwaway)
 
+**Verdict:** A — Float up, but full-width along the bottom edge, rising at most 200 px, with 40 px emoji, **behind** the name badge and the Reference thumbnail. Reactions are kept over the Reveal. The drawing cap is 200. These are now the defaults below. The details are in the resolution on the issue.
+
 Answers [How do reactions look on a Contestant's screen?](https://github.com/rymdkrog/code-in-the-dark-editor/issues/15). Not the Core Editor.
 
 Double-click `reactions-prototype.html` (fully inlined, works from `file://` offline). Rebuild with `npm install && npm run build`.
@@ -8,7 +10,7 @@ It sits on the winning Power Mode from [Does Power Mode feel the same on the new
 
 ## Variants (top bar ◀ ▶, or `?variant=A|B|C|D`)
 
-- **A — Float up**: each Reaction rises from the bottom edge between the name badge and the buttons, wobbles, and fades after ~3 s.
+- **A — Float up** (the winner): each Reaction rises from anywhere along the bottom edge, at most the *rise* height (200 px), wobbles, and fades within ~2 s. It was first built in the badge-to-buttons band, rising ~3 s at 56 px.
 - **B — Hype rail**: one bar at the bottom with the four emoji and a live counter each. Every Reaction bumps its counter and sends a small hop. A counter drains to 0 after 4 s without that emoji, and the bar fades out when everything's quiet.
 - **C — Badge burst**: Reactions pop out of the top of the Contestant's name badge, which bumps. On a shared screen they read as "for Ada".
 - **D — Fountain**: Reactions are launched from the bottom edge and arc back down with gravity and spin, like Power Mode's particles but emoji-sized.
@@ -35,5 +37,7 @@ It sits on the winning Power Mode from [Does Power Mode feel the same on the new
 | Firefox keystroke p95 | 3 | 3 | 4 | 4 | **17** | **27** (3 long frames) |
 | WebKit keystroke p95 | 3 | 3 | 3 | 3 | 3 | 3 |
 | Drawn of ~10,000 | 160 | 600 hops (+ all counted) | 263 | 343 | all | all |
+
+With the final A (full-width, 200 px rise, 40 px) at **cap 200**, the keystroke p95 was 3.5–3.7 ms in Chromium, 4–5 ms in Firefox (max 14) and 3 ms in WebKit, with no frames over 50 ms. Firefox's overlay frame max of 12 ms is the thinnest margin. Of ~10,000 Reactions, ~1,010 were drawn. With no cap, the final A hit a p95 of 23 ms in Chromium and a max of 92 ms in Firefox.
 
 The overlay's frame cost at cap 40 was ≤ 4 ms everywhere. Without a cap, A's frame grows to ~45 ms in Chromium and Firefox. Headless WebKit throttles rendering, so its no-cap row is optimistic. These are headless numbers; the real-device tier still applies.
