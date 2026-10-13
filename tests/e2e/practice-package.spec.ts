@@ -9,7 +9,8 @@ const TEMPLATE = dist("core-editor.html");
 const ALLOWED_SCHEMES = ["file:", "data:", "blob:"];
 
 // The no-network gate. Every test runs with the network off, records every request the page
-// makes and every error it reports, and fails on anything that leaves file:, data: or blob:.
+// makes, every CSP violation and every error it reports, and fails on anything that leaves
+// file:, data: or blob:.
 const test = base.extend<{ gate: void }>({
   gate: [
     async ({ context }, use) => {
@@ -23,6 +24,14 @@ const test = base.extend<{ gate: void }>({
         if (message.type() === "error") errors.push(message.text());
       });
       context.on("weberror", (error) => errors.push(String(error.error())));
+      // A request the package's CSP blocks never reaches the network, so it never shows up
+      // as a request. Count the violation itself.
+      await context.exposeBinding("reportCspViolation", (_source, uri: string) => offending.push(`CSP: ${uri}`));
+      await context.addInitScript(() =>
+        document.addEventListener("securitypolicyviolation", (event) =>
+          (window as unknown as { reportCspViolation(uri: string): void }).reportCspViolation(event.blockedURI),
+        ),
+      );
 
       await use();
 

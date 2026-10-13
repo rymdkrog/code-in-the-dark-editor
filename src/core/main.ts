@@ -5,7 +5,6 @@ import { readRound } from "./round.ts";
 const round = readRound();
 
 if (round) {
-  document.title = `${round.roundName} · ${round.competitionName}`;
   void startEditor(document.getElementById("editor")!);
 } else {
   document.querySelector<HTMLElement>(".bare-template")!.hidden = false;
