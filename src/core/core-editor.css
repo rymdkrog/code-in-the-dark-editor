@@ -199,6 +199,125 @@ body.power-mode button:not(.name-badge) {
   background: #3a5a93;
 }
 
+/* Around the editor, laid out as in the original. */
+button {
+  appearance: none;
+  padding: 10px 15px;
+  border: none;
+  box-shadow: none;
+  background-color: #3a9364;
+  color: white;
+  font-family: "Press Start 2P", sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button:focus {
+  outline: none;
+}
+
+.button-bar {
+  position: absolute;
+  z-index: 10;
+  right: 20px;
+  bottom: 20px;
+}
+
+.reference {
+  position: absolute;
+  z-index: 50;
+  right: 20px;
+  bottom: 62px;
+  box-sizing: border-box;
+  color: white;
+  font-size: 12px;
+  text-align: right;
+  cursor: pointer;
+}
+
+.reference span {
+  display: block;
+  margin-bottom: 15px;
+}
+
+.reference img {
+  display: block;
+  width: 200px;
+  height: 160px;
+  object-fit: cover;
+}
+
+.reference.open {
+  inset: 0;
+  padding: 25px;
+}
+
+.reference.open span {
+  display: none;
+}
+
+.reference.open img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* A white sheet of plain text, as the original's instructions page was. */
+.instructions {
+  position: absolute;
+  z-index: 100;
+  inset: 0;
+  padding: 100px 20px 0;
+  box-sizing: border-box;
+}
+
+.instructions-panel {
+  box-sizing: border-box;
+  max-width: 900px;
+  height: 600px;
+  max-height: calc(100% - 20px);
+  margin: 0 auto;
+  padding: 0 20px 20px;
+  overflow: auto;
+  background: white;
+  color: black;
+  font: 14px/1.5 monospace;
+  cursor: auto;
+}
+
+.instructions-panel:focus {
+  outline: none;
+}
+
+.instructions-panel h2 {
+  margin: 1.5em 0 0.5em;
+  font-size: inherit;
+}
+
+.instructions-panel p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.instructions-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instructions-panel .swatch {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.75em;
+  border: 1px solid black;
+  vertical-align: -0.15em;
+}
+
+.instructions-panel .hex {
+  margin-right: 0.75em;
+}
+
 @keyframes pulse {
   0% {
     animation-timing-function: ease-out;
