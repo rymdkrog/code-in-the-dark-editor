@@ -18,7 +18,8 @@ export interface RoundData {
   };
   /** The Reference as a data: URI. */
   reference: string;
-  assets: { name: string; width: number; height: number; dataUri: string }[];
+  /** Pixel dimensions are null for an asset that isn't an image, such as a font. */
+  assets: { name: string; width: number | null; height: number | null; dataUri: string }[];
   /** Present only when the Audience layer is on. No Worker URL means pure offline. */
   audience?: {
     workerUrl: string;

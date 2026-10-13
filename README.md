@@ -15,12 +15,13 @@ Needs Node 24.
 
 ```sh
 npm install
-npm run build      # dist/core-editor.html (the template) and dist/citd-practice.html
+npm run build      # dist/core-editor.html (the template), dist/prep/ and dist/citd-practice.html
+npm run dev:prep   # the prep page, locally; it needs the template, so build first
 npm run typecheck
 npm run lint       # includes the module-boundary rules
 npm test           # unit tests
 npx playwright install chromium firefox webkit
-npm run test:e2e   # the no-network gate, against dist/; build first
+npm run test:e2e   # the no-network gate and the prep page, against dist/; build first
 npm run worker:dev # the Worker under wrangler dev
 ```
 
