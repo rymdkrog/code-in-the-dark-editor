@@ -295,11 +295,14 @@ body.share .proto-hud .grid { grid-template-columns: repeat(2, 1fr); }
     </div>
     <div class="row"><b>Overlay</b>
       <label>drawing cap <select data-set="cap">
-        <option value="10">10</option><option value="20">20</option><option value="40" selected>40</option>
-        <option value="80">80</option><option value="200">200</option><option value="100000">no cap</option>
+        <option value="10">10</option><option value="20">20</option><option value="40">40</option>
+        <option value="80">80</option><option value="200" selected>200</option><option value="100000">no cap</option>
       </select></label>
       <label>emoji size <select data-set="size">
-        <option value="40">40px</option><option value="56" selected>56px</option><option value="72">72px</option><option value="96">96px</option>
+        <option value="40" selected>40px</option><option value="56">56px</option><option value="72">72px</option><option value="96">96px</option>
+      </select></label>
+      <label>rise (A) <select data-set="rise">
+        <option value="120">120px</option><option value="200" selected>200px</option><option value="300">300px</option><option value="450">450px</option>
       </select></label>
       <button data-act="chaos">Run chaos test (1000/s × 10 s, Power Mode)</button>
       <button data-act="resetStats">reset stats</button>
@@ -436,7 +439,7 @@ function runShareParent() {
     if (name === "set:share") return setShare(value);
     if (name === "hud") { $("#hud").hidden = !$("#hud").hidden; return; }
     // Variant and overlay settings go to every tile; crowd + Contestant actions only to the first.
-    const all = name === "prev" || name === "next" || name === "set:cap" || name === "set:size" || name === "set:duringReveal";
+    const all = name === "prev" || name === "next" || name === "set:cap" || name === "set:size" || name === "set:rise" || name === "set:duringReveal";
     for (const f of all ? frames : frames.slice(0, 1)) f.contentWindow.postMessage({ proto: "act", name, value }, "*");
   };
   wireControls();
@@ -661,7 +664,7 @@ function setReveal(on) {
 const rcanvas = $(".reaction-overlay");
 const rctx = rcanvas.getContext("2d");
 const rail = $(".hype-rail");
-const settings = { cap: 40, size: 56, duringReveal: "keep" };
+const settings = { cap: 200, size: 40, rise: 200, duringReveal: "keep" };
 let rdpr = 1;
 function sizeReactionCanvas() {
   rdpr = window.devicePixelRatio || 1;
@@ -719,11 +722,12 @@ const rstats = { arrivals: 0, drawn: 0, dropped: 0, arrivalsPs: 0, drawnPs: 0, d
 function FloatUp() {
   return {
     key: "A", name: "Float up",
-    note: "Each Reaction rises from the bottom edge somewhere between the name badge and the buttons, wobbles, and fades out after ~3 s. One sprite per Reaction, up to the drawing cap; the rest are dropped.",
+    note: "Each Reaction rises from anywhere along the bottom edge (over the badge and buttons too), wobbles, and fades out within ~2 s, rising at most the 'rise' height. One sprite per Reaction, up to the drawing cap; the rest are dropped.",
     spawn(e) {
       const s = settings.size;
-      return { e, x: rnd(layout.bandL + s / 2, layout.bandR - s / 2), y: layout.H + s * 0.2, t: 0,
-        life: rnd(2.6, 3.4), vy: -rnd(110, 170), wob: rnd(8, 18), f: rnd(0.6, 1.0), ph: rnd(0, 6.28), x0: 0 };
+      const life = rnd(1.8, 2.4);
+      return { e, x: rnd(s / 2, layout.W - s / 2), y: layout.H + s * 0.2, t: 0,
+        life, vy: -settings.rise * rnd(0.6, 1) / life, wob: rnd(6, 12), f: rnd(0.6, 1.0), ph: rnd(0, 6.28), x0: 0 };
     },
     step(p, dt) {
       p.t += dt;
@@ -1080,6 +1084,7 @@ act = (name, value) => {
   else if (name === "set:rate") crowd.rate = Number(value);
   else if (name === "set:mix") crowd.mix = value;
   else if (name === "set:cap") settings.cap = Number(value);
+  else if (name === "set:rise") settings.rise = Number(value);
   else if (name === "set:size") { settings.size = Number(value); spriteCache.clear(); }
   else if (name === "set:duringReveal") { settings.duringReveal = value; applyRevealMode(); }
   else if (name === "send") deliver(value);
