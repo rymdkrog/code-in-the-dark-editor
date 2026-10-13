@@ -57,6 +57,10 @@ _Avoid_: Finish, result, preview
 One Audience member's single pick from the Current Round's Roster, cast after the Reveals; the tally advises the Host, who announces the winner.
 _Avoid_: Score, rating, ballot
 
+**Reaction**:
+One emoji, from a fixed set of four, that an Audience member sends to one Contestant on the Current Round's Roster while it is up next, running or at time's up; it appears on that Contestant's screen and is never stored or queued.
+_Avoid_: Emote, cheer, like
+
 **Combo**:
 The running count of a Contestant's consecutive insertions, reset after a pause.
 _Avoid_: Streak, score
