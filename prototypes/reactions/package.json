@@ -1,0 +1,11 @@
+{
+  "name": "reactions-prototype",
+  "private": true,
+  "description": "PROTOTYPE — throwaway. How do reactions look on a Contestant's screen?",
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": {
+    "ace-builds": "1.44.0",
+    "@fontsource/press-start-2p": "5.3.0"
+  }
+}

@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Not the Core Editor.
+  Question: "How do reactions look on a Contestant's screen?" (wayfinder ticket #15)
+  Four variants of the Reaction overlay, switchable via ?variant= and the top bar, on top of the
+  winning Power Mode effects from ticket #8 (v2 + synced pulses):
+    A — Float up: each Reaction rises from the bottom edge between the name badge and the buttons.
+    B — Hype rail: one bar at the bottom with four live counters that bump and drain (no sprite per Reaction).
+    C — Badge burst: Reactions pop out of the Contestant's name badge.
+    D — Fountain: Reactions are launched from the bottom edge and arc back down with gravity.
+  The overlay is "Enhancement" code: its own canvas + rAF loop that idles, never touches ACE or the
+  Power Mode canvas, and learns about the Reveal only from a one-way CustomEvent the "Core" publishes.
+  ?share=50|33|25 frames the page in a scaled iframe to judge it as a screen share / projector tile.
+  Built by build.mjs into reactions-prototype.html.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reactions prototype</title>
+<style>
+@font-face {
+  font-family: "Press Start 2P";
+  src: url(data:font/woff2;base64,__FONT__) format("woff2");
+}
+body, html {
+  font-family: "Press Start 2P", sans-serif;
+  width: 100%; height: 100%; overflow: hidden;
+  padding: 0; margin: 0; background: black;
+}
+body { position: relative; }
+button {
+  font-family: "Press Start 2P", sans-serif;
+  appearance: none; background-color: #3A9364; color: white;
+  font-size: 12px; padding: 10px 15px; box-shadow: none; border: none; cursor: pointer;
+}
+button:focus { border: none; box-shadow: none; outline: none; }
+
+/* Placeholder art — v2 gets new original art; CITD logos are not reused. */
+.background {
+  position: absolute; inset: 0; z-index: 0; opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 476'%3E%3Cpath d='M300 40a200 200 0 1 0 180 280A160 160 0 1 1 300 40z' fill='none' stroke='%233A9364' stroke-width='18'/%3E%3Ctext x='250' y='270' font-family='monospace' font-size='96' fill='%233A9364' text-anchor='middle'%3E%26lt;/%26gt;%3C/text%3E%3C/svg%3E");
+  background-position: 50% 50%; background-repeat: no-repeat; background-size: 520px 476px;
+}
+.power-mode .background {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 476'%3E%3Cpath d='M300 40a200 200 0 1 0 180 280A160 160 0 1 1 300 40z' fill='none' stroke='%2300DDFF' stroke-width='18'/%3E%3Ctext x='250' y='270' font-family='monospace' font-size='96' fill='%2300DDFF' text-anchor='middle'%3E%26lt;/%26gt;%3C/text%3E%3C/svg%3E");
+  animation: background-power 2s infinite both;
+}
+
+.canvas-overlay { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; }
+
+#editor {
+  position: absolute; top: 0; bottom: 0; left: 0; right: 0; margin: 0;
+  background: transparent; font-size: 14px; transform: translate3d(0, 0, 0);
+}
+#editor .ace_keyword, #editor .ace_meta, #editor .ace_fold,
+#editor .ace_entity.ace_name.ace_function, #editor .ace_support.ace_function,
+#editor .ace_variable { color: #00FF79; }
+#editor .ace_comment { color: #0DFDFF; display: inline-block; animation: grow 1.5s infinite both; }
+#editor .ace_gutter { background: rgba(0,0,0,0.5); }
+#editor .ace_constant, #editor .ace_constant.ace_character,
+#editor .ace_constant.ace_character.ace_escape, #editor .ace_constant.ace_other,
+#editor .ace_string { color: #F9FF00; animation: pulse 1.5s infinite both; }
+
+body.power-mode #editor .ace_keyword, body.power-mode #editor .ace_meta,
+body.power-mode #editor .ace_fold, body.power-mode #editor .ace_entity.ace_name.ace_function,
+body.power-mode #editor .ace_support.ace_function, body.power-mode #editor .ace_variable { color: #00DDFF; }
+body.power-mode #editor .ace_comment { color: #00FF79; }
+body.power-mode #editor .ace_constant, body.power-mode #editor .ace_string { color: #F9FF00; }
+body.power-mode #editor .ace_entity.ace_other.ace_attribute-name { color: #8194F4; }
+
+.streak-container { position: absolute; z-index: 10; right: 20px; top: 20px; text-align: right; }
+.streak-container .current { color: white; font-size: 16px; }
+.streak-container .bar {
+  position: relative; opacity: 0.5; margin-top: 23px; height: 8px;
+  background: #4EFFA1; width: 100%; transform: scaleX(0);
+}
+.streak-container .counter { font-size: 80px; color: #4EFFA1; padding-top: 30px; }
+.streak-container .counter.bump { animation: grow 0.25s both; }
+.streak-container .exclamations {
+  position: absolute; bottom: -20px; right: 0; display: block;
+  color: #4EFFA1; opacity: 0.75; font-size: 20px; text-align: right;
+}
+.streak-container .exclamations .exclamation {
+  right: 0; top: 0; display: block; position: absolute; min-width: 200px;
+  animation: exclamation 1.5s ease-out both;
+}
+
+.button-bar { position: absolute; z-index: 10; bottom: 20px; right: 20px; }
+.button-bar button { float: right; margin-left: 10px; }
+
+.reference-screenshot-container {
+  position: absolute; z-index: 50; bottom: 62px; right: 20px;
+  color: white; text-align: right; font-size: 12px;
+}
+.reference-screenshot {
+  width: 200px; height: 160px; margin-top: 15px;
+  background: linear-gradient(#e8e4dc 0 22%, #c94f3d 22% 26%, #f4f1ea 26%);
+}
+
+.name-tag {
+  position: absolute; z-index: 40; bottom: 20px; left: 20px; padding: 20px;
+  background: rgba(58, 147, 100, 0.75); color: white; font-size: 56px;
+}
+
+.power-mode-indicator {
+  position: absolute; z-index: 5; width: 100%; text-align: center; top: 20px;
+  pointer-events: none; opacity: 0; transition: opacity 0.25s;
+}
+.power-mode-indicator h1 { font-size: 40px; margin: 0; color: #00DDFF; }
+
+body.power-mode .power-mode-indicator { opacity: 1; animation: power-mode-indicator 750ms linear both; }
+body.power-mode .name-tag { background: rgba(0, 221, 255, 0.75); }
+body.power-mode .streak-container .counter { color: #00DDFF; }
+body.power-mode .streak-container .bar { background: #00DDFF; }
+body.power-mode button { background: #3A5A93; }
+body.power-mode .exclamations .exclamation { color: #00DDFF; }
+
+/* ---- The Reveal (mock): only the result and the name badge are visible (ticket #5) ---- */
+.reveal { position: absolute; inset: 0; z-index: 60; background: #f4f1ea; display: none; overflow: hidden; }
+body.revealing .reveal { display: block; }
+body.revealing .name-tag { z-index: 70; }
+body.revealing #editor, body.revealing .streak-container, body.revealing .reference-screenshot-container,
+body.revealing .button-bar, body.revealing .power-mode-indicator, body.revealing .canvas-overlay { visibility: hidden; }
+.reveal .r-nav { height: 64px; background: #222; display: flex; align-items: center; gap: 28px; padding: 0 48px; }
+.reveal .r-nav i { display: block; width: 90px; height: 14px; background: #e8e4dc; }
+.reveal .r-nav i:first-child { width: 140px; background: #c94f3d; }
+.reveal .r-hero { height: 38%; background: #c94f3d; margin: 0 0 0 36px; display: flex; align-items: center; padding-left: 64px; }
+.reveal .r-hero b { font: 700 64px Helvetica, Arial, sans-serif; color: #fff; transform: rotate(-1.5deg); }
+.reveal .r-cards { display: flex; gap: 36px; padding: 40px 48px; }
+.reveal .r-cards div { flex: 1; height: 180px; background: #fff; box-shadow: 0 2px 0 #ddd; }
+.reveal .r-cards div:nth-child(2) { margin-top: 30px; }
+
+/* ---- Reaction overlay (Enhancement) ---- */
+.reaction-overlay { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 45; }
+.reaction-overlay.over-reveal { z-index: 80; }
+.reaction-overlay.quiet { opacity: 0.45; }
+.hype-rail {
+  position: absolute; z-index: 45; bottom: 22px; left: 50%; display: flex; gap: 6px;
+  padding: 10px 14px; background: rgba(0, 0, 0, 0.72); border: 3px solid #4EFFA1;
+  pointer-events: none; opacity: 0; transition: opacity 0.4s; transform: translateX(-50%);
+}
+body.power-mode .hype-rail { border-color: #00DDFF; }
+.hype-rail.live { opacity: 1; }
+.hype-rail.over-reveal { z-index: 80; }
+.hype-rail.quiet.live { opacity: 0.45; }
+.hype-rail .cell { display: flex; align-items: center; gap: 8px; padding: 0 10px; opacity: 0.25; transition: opacity 0.3s; }
+.hype-rail .cell.hot { opacity: 1; }
+.hype-rail .cell .e { font-size: 48px; line-height: 1; display: inline-block; }
+.hype-rail .cell .n { font-size: 22px; color: #fff; min-width: 3.5ch; }
+
+@keyframes pulse {
+  0% { animation-timing-function: ease-out; }
+  50% { opacity: 0.5; animation-timing-function: ease-in; }
+}
+@keyframes grow {
+  0% { animation-timing-function: ease-out; }
+  50% { transform: scale(1.3); animation-timing-function: ease-in; }
+}
+@keyframes exclamation {
+  100% { opacity: 0; transform: translate3D(0, 100px, 0); }
+}
+@keyframes background-power {
+  0% { animation-timing-function: ease-out; }
+  50% { transform: scale(1.5); animation-timing-function: ease-in; }
+}
+@keyframes power-mode-indicator {
+  0% { transform: matrix3d(0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  3.2% { transform: matrix3d(0.673, 0.192, 0, 0, 0.126, 0.673, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  4.5% { transform: matrix3d(0.743, 0.25, 0, 0, 0.163, 0.743, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  6.41% { transform: matrix3d(0.836, 0.301, 0, 0, 0.196, 0.836, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  9.01% { transform: matrix3d(0.94, 0.308, 0, 0, 0.201, 0.94, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  12.71% { transform: matrix3d(1.032, 0.234, 0, 0, 0.154, 1.032, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  13.51% { transform: matrix3d(1.044, 0.212, 0, 0, 0.14, 1.044, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  17.92% { transform: matrix3d(1.07, 0.098, 0, 0, 0.066, 1.07, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  18.92% { transform: matrix3d(1.069, 0.077, 0, 0, 0.052, 1.069, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  25.23% { transform: matrix3d(1.038, -0.001, 0, 0, -0.001, 1.038, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  29.03% { transform: matrix3d(1.016, -0.015, 0, 0, -0.01, 1.016, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  31.43% { transform: matrix3d(1.006, -0.017, 0, 0, -0.011, 1.006, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  34.63% { transform: matrix3d(0.997, -0.014, 0, 0, -0.01, 0.997, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  40.14% { transform: matrix3d(0.992, -0.007, 0, 0, -0.005, 0.992, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  56.46% { transform: matrix3d(1, 0.001, 0, 0, 0.001, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  62.36% { transform: matrix3d(1.001, 0.001, 0, 0, 0, 1.001, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  81.48% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+  100% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
+}
+
+/* ---- Prototype chrome: deliberately not part of the design being judged (top, so the bottom stays clear) ---- */
+.proto-bar, .proto-hud {
+  position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #111; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.5);
+}
+.proto-bar {
+  top: 8px; display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 999px; border: 2px solid #ff3d7f;
+}
+.proto-bar button, .proto-hud button {
+  font: inherit; background: #eee; color: #111; padding: 3px 9px; border-radius: 999px;
+}
+.proto-bar button:hover, .proto-hud button:hover { background: #ddd; }
+.proto-bar .label { min-width: 220px; text-align: center; font-weight: 700; }
+.proto-hud select { font: inherit; }
+.proto-hud {
+  top: 52px; width: min(820px, calc(100vw - 32px)); border-radius: 10px;
+  padding: 10px 12px; border: 2px solid #ff3d7f; opacity: .94;
+}
+.proto-hud[hidden] { display: none; }
+.proto-hud .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 14px; }
+.proto-hud .k { color: #666; }
+.proto-hud .v { font-weight: 700; }
+.proto-hud .warn { color: #c0003c; }
+.proto-hud .ok { color: #08752f; }
+.proto-hud .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+.proto-hud .row b { min-width: 74px; }
+.proto-hud label { display: inline-flex; gap: 4px; align-items: center; }
+.proto-hud .note { color: #555; margin-top: 6px; }
+.proto-hud .chaos { margin-top: 6px; font-weight: 700; }
+body.embedded .proto-bar, body.embedded .proto-hud { display: none; }
+
+/* ---- Share preview (?share=…): this page frames itself, scaled like a projector / call tile ---- */
+body.share { background: #2a2a2a; overflow: auto; }
+body.share > :not(.proto-bar):not(.proto-hud):not(.share-stage) { display: none !important; }
+body.share .proto-bar { left: 12px; transform: none; }
+body.share .proto-hud { left: auto; right: 12px; top: 12px; transform: none; width: 420px; max-height: calc(100vh - 24px); overflow: auto; }
+body.share .proto-hud .grid { grid-template-columns: repeat(2, 1fr); }
+.share-stage { position: absolute; left: 12px; top: 60px; display: grid; gap: 10px; }
+.share-stage .tile { position: relative; overflow: hidden; background: #000; outline: 1px solid #555; }
+.share-stage iframe { border: 0; transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+.share-stage .cap { color: #bbb; font: 11px ui-monospace, Menlo, monospace; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <div class="background"></div>
+  <canvas class="canvas-overlay"></canvas>
+  <pre id="editor"></pre>
+  <div class="streak-container">
+    <div class="current">Combo</div>
+    <div class="counter">0</div>
+    <div class="bar"></div>
+    <div class="exclamations"></div>
+  </div>
+  <div class="reference-screenshot-container">
+    <span>Reference</span>
+    <div class="reference-screenshot"></div>
+  </div>
+  <div class="reveal"><div class="r-nav"><i></i><i></i><i></i><i></i></div><div class="r-hero"><b>Hello, dark</b></div><div class="r-cards"><div></div><div></div><div></div></div></div>
+  <div class="name-tag">Ada</div>
+  <div class="power-mode-indicator"><h1>POWER MODE!</h1></div>
+  <div class="button-bar">
+    <button tabindex="-1">⋯</button>
+    <button tabindex="-1">Finish</button>
+    <button tabindex="-1">Instructions</button>
+  </div>
+  <canvas class="reaction-overlay"></canvas>
+  <div class="hype-rail" hidden></div>
+
+  <div class="proto-bar">
+    <span style="color:#ff3d7f;font-weight:700">PROTOTYPE</span>
+    <button data-act="prev" title="previous variant">◀</button>
+    <span class="label" id="variant-label"></span>
+    <button data-act="next" title="next variant">▶</button>
+    <button data-act="hud">controls</button>
+    <label>share preview
+      <select data-set="share">
+        <option value="">off</option><option value="50">50%</option><option value="33">33%</option>
+        <option value="25">25%</option><option value="grid">2×2 grid</option>
+      </select>
+    </label>
+  </div>
+  <div class="proto-hud" id="hud">
+    <div class="grid" id="hud-grid"></div>
+    <div class="row"><b>Crowd</b>
+      <label>rate <select data-set="rate">
+        <option value="0">off</option><option value="1">1/s (a few fans)</option><option value="5">5/s</option>
+        <option value="20" selected>20/s (typical crowd)</option><option value="50">50/s</option>
+        <option value="200">200/s</option><option value="1000">1000/s (mashing flood)</option>
+      </select></label>
+      <label>mix <select data-set="mix">
+        <option value="mixed">mixed</option><option value="🔥">🔥 only</option><option value="👏">👏 only</option>
+        <option value="😂">😂 only</option><option value="😱">😱 only</option>
+      </select></label>
+      <button data-act="send" data-value="🔥">🔥</button><button data-act="send" data-value="👏">👏</button>
+      <button data-act="send" data-value="😂">😂</button><button data-act="send" data-value="😱">😱</button>
+      <button data-act="burst">burst ×30</button>
+    </div>
+    <div class="row"><b>Contestant</b>
+      <button data-act="combo0">Combo → 0</button>
+      <button data-act="combo500">Combo → 500 (Power Mode)</button>
+      <button data-act="robo">Robo-typist: off</button>
+      <button data-act="reveal">Reveal: off</button>
+      <label>during the Reveal <select data-set="duringReveal">
+        <option value="keep">keep, over the result</option><option value="quiet">quiet (faded)</option>
+        <option value="hide">hide (drop them)</option>
+      </select></label>
+    </div>
+    <div class="row"><b>Overlay</b>
+      <label>drawing cap <select data-set="cap">
+        <option value="10">10</option><option value="20">20</option><option value="40" selected>40</option>
+        <option value="80">80</option><option value="200">200</option><option value="100000">no cap</option>
+      </select></label>
+      <label>emoji size <select data-set="size">
+        <option value="40">40px</option><option value="56" selected>56px</option><option value="72">72px</option><option value="96">96px</option>
+      </select></label>
+      <button data-act="chaos">Run chaos test (1000/s × 10 s, Power Mode)</button>
+      <button data-act="resetStats">reset stats</button>
+    </div>
+    <div class="note" id="hud-note"></div>
+    <div class="chaos" id="hud-chaos"></div>
+  </div>
+
+<script>/*__ACE__*/</script>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+const MODE = params.get("share") ? "share" : params.has("embed") ? "embed" : "solo";
+const EMOJI = ["🔥", "👏", "😂", "😱"];
+
+// The controls in .proto-hud / .proto-bar call act(name, value). In share mode they're forwarded to the iframe(s).
+let act = () => {};
+function wireControls() {
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-act]");
+    if (!el) return;
+    act(el.dataset.act, el.dataset.value);
+  });
+  document.addEventListener("change", (e) => {
+    const el = e.target.closest("[data-set]");
+    if (el) act("set:" + el.dataset.set, el.value);
+  });
+}
+function setShare(value) {
+  const url = new URL(location.href);
+  url.searchParams.delete("embed");
+  if (value) url.searchParams.set("share", value); else url.searchParams.delete("share");
+  location.href = url.href;
+}
+
+if (MODE === "share") runShareParent(); else runEditor();
+
+// ===========================================================================
+// Share preview: frame this page (?embed) at a fixed laptop size, scaled down
+// ===========================================================================
+function runShareParent() {
+  document.body.classList.add("share");
+  const share = params.get("share");
+  const W = 1440, H = 900;
+  const grid = share === "grid";
+  const scale = grid ? 0.25 : Number(share) / 100;
+  const names = ["Ada", "Grace", "Linus", "Margaret"];
+  const stage = document.createElement("div");
+  stage.className = "share-stage";
+  stage.style.gridTemplateColumns = grid ? `repeat(2, ${W * scale}px)` : `${W * scale}px`;
+  const frames = [];
+  (grid ? names : names.slice(0, 1)).forEach((name, i) => {
+    const wrap = document.createElement("div");
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    tile.style.width = W * scale + "px"; tile.style.height = H * scale + "px";
+    const f = document.createElement("iframe");
+    const src = new URL(location.href);
+    src.searchParams.delete("share");
+    src.searchParams.set("embed", "1");
+    src.searchParams.set("name", name);
+    if (i > 0) src.searchParams.set("quietCrowd", "1"); // other tiles get a calmer crowd
+    f.src = src.href;
+    f.width = W; f.height = H;
+    f.style.transform = `scale(${scale})`;
+    tile.append(f);
+    const cap = document.createElement("div");
+    cap.className = "cap";
+    cap.textContent = i === 0 ? `${name} — the one you control (click it to type) · 1440×900 at ${Math.round(scale * 100)}%` : `${name} — same variant, calmer crowd`;
+    wrap.append(tile, cap);
+    stage.append(wrap);
+    frames.push(f);
+  });
+  document.body.append(stage);
+  $('[data-set="share"]').value = share;
+  const blur = document.createElement("label");
+  blur.innerHTML = `<input type="checkbox"> video blur`;
+  blur.querySelector("input").addEventListener("change", (e) => {
+    for (const f of frames) f.style.filter = e.target.checked ? "blur(1.2px) saturate(0.85)" : "";
+  });
+  $(".proto-bar").append(blur);
+
+  act = (name, value) => {
+    if (name === "set:share") return setShare(value);
+    if (name === "hud") { $("#hud").hidden = !$("#hud").hidden; return; }
+    // Variant and overlay settings go to every tile; crowd + Contestant actions only to the first.
+    const all = name === "prev" || name === "next" || name === "set:cap" || name === "set:size" || name === "set:duringReveal";
+    for (const f of all ? frames : frames.slice(0, 1)) f.contentWindow.postMessage({ proto: "act", name, value }, "*");
+  };
+  wireControls();
+  window.addEventListener("message", (e) => {
+    const d = e.data;
+    if (!d || d.proto !== "stats" || e.source !== frames[0].contentWindow) return;
+    $("#variant-label").textContent = d.label;
+    $("#hud-grid").innerHTML = d.grid;
+    $("#hud-note").textContent = d.note;
+    $("#hud-chaos").textContent = d.chaos;
+    if (d.robo) $('[data-act="robo"]').textContent = d.robo;
+    if (d.reveal) $('[data-act="reveal"]').textContent = d.reveal;
+  });
+}
+
+// ===========================================================================
+// The Contestant's screen
+// ===========================================================================
+function runEditor() {
+const body = document.body;
+if (MODE === "embed") body.classList.add("embedded");
+if (params.get("name")) $(".name-tag").textContent = params.get("name");
+const editorEl = $("#editor");
+const canvas = $(".canvas-overlay");
+const ctx = canvas.getContext("2d");
+
+// ---------------------------------------------------------------------------
+// "Core": editor + Power Mode exactly as decided in ticket #8 (variant C)
+// ---------------------------------------------------------------------------
+const POWER_MODE_ACTIVATION_THRESHOLD = 200;
+const STREAK_TIMEOUT = 10 * 1000;
+const MAX_PARTICLES = 500;
+const PARTICLE_NUM_RANGE = [5, 6, 7, 8, 9, 10, 11, 12];
+const PARTICLE_GRAVITY = 0.075;
+const PARTICLE_SIZE = 8;
+const PARTICLE_ALPHA_FADEOUT = 0.96;
+const PARTICLE_VELOCITY_RANGE = { x: [-2.5, 2.5], y: [-7, -3.5] };
+const PARTICLE_COLORS = {
+  "text": [255, 255, 255], "text.xml": [255, 255, 255],
+  "keyword": [0, 221, 255], "variable": [0, 221, 255], "meta.tag.tag-name.xml": [0, 221, 255],
+  "keyword.operator.attribute-equals.xml": [0, 221, 255],
+  "constant": [249, 255, 0], "constant.numeric": [249, 255, 0], "support.constant": [249, 255, 0],
+  "string.attribute-value.xml": [249, 255, 0], "string.unquoted.attribute-value.html": [249, 255, 0],
+  "entity.other.attribute-name.xml": [129, 148, 244], "comment": [0, 255, 121], "comment.xml": [0, 255, 121],
+};
+const EXCLAMATION_EVERY = 10;
+const EXCLAMATIONS = ["Super!", "Radical!", "Fantastic!", "Great!", "OMG",
+  "Whoah!", ":O", "Nice!", "Splendid!", "Wild!", "Grand!", "Impressive!",
+  "Stupendous!", "Extreme!", "Awesome!"];
+const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const defer = (fn) => setTimeout(fn, 1);
+const debounce = (fn, wait) => { let t; return () => { clearTimeout(t); t = setTimeout(fn, wait); }; };
+const throttleLeading = (fn, wait) => {
+  let last = -Infinity;
+  return (...args) => { const now = Date.now(); if (now - last >= wait) { last = now; fn(...args); } };
+};
+
+const editor = ace.edit("editor");
+const focusEditor = () => { if (MODE !== "embed") editor.focus(); };
+editor.setShowPrintMargin(false);
+editor.setHighlightActiveLine(false);
+editor.setFontSize(20);
+editor.setTheme("ace/theme/vibrant_ink");
+editor.session.setMode("ace/mode/html");
+editor.session.setOption("useWorker", false);
+editor.session.setFoldStyle("manual");
+editor.setOption("behavioursEnabled", false);
+editor.setOption("enableAutoIndent", true);
+(function mergeCommentTokens() {
+  const mode = editor.session.getMode();
+  const rules = mode.$highlightRules.getRules();
+  for (const state of Object.values(rules)) for (const rule of state) {
+    if (rule.token === "comment.start.xml" || rule.token === "comment.end.xml") rule.token = "comment.xml";
+  }
+  const Tokenizer = ace.require("ace/tokenizer").Tokenizer;
+  mode.$tokenizer = new Tokenizer(rules);
+  editor.session.bgTokenizer.setTokenizer(mode.$tokenizer);
+})();
+editor.setValue(`<!DOCTYPE html>
+<html>
+  <head>
+    <!-- open "controls": the crowd is already reacting -->
+    <style>
+      body { font-family: "Helvetica", sans-serif; margin: 0; }
+      .hero { background: #c94f3d; height: 120px; }
+    </style>
+  </head>
+  <body>
+    <div class="hero" id="top">
+      <h1 title="hello">Hello, dark</h1>
+    </div>
+
+  </body>
+</html>
+`, -1);
+editor.gotoLine(14, 4);
+focusEditor();
+
+const $counter = $(".streak-container .counter");
+const $bar = $(".streak-container .bar");
+const $exclamations = $(".streak-container .exclamations");
+let currentStreak = 0;
+let powerMode = false;
+function renderStreak() {
+  $counter.textContent = currentStreak;
+  $counter.classList.remove("bump");
+  defer(() => $counter.classList.add("bump"));
+}
+function refreshStreakBar() {
+  $bar.style.transform = "scaleX(1)";
+  $bar.style.transition = "none";
+  defer(() => { $bar.style.transform = ""; $bar.style.transition = `all ${STREAK_TIMEOUT}ms linear`; });
+}
+function showExclamation() {
+  const el = document.createElement("span");
+  el.className = "exclamation";
+  el.textContent = sample(EXCLAMATIONS);
+  $exclamations.prepend(el);
+  setTimeout(() => el.remove(), 3000);
+}
+function activatePowerMode() { powerMode = true; body.classList.add("power-mode"); }
+function deactivatePowerMode() { powerMode = false; body.classList.remove("power-mode"); }
+function increaseStreak() {
+  currentStreak++;
+  if (currentStreak > 0 && currentStreak % EXCLAMATION_EVERY === 0) showExclamation();
+  if (currentStreak >= POWER_MODE_ACTIVATION_THRESHOLD && !powerMode) activatePowerMode();
+  refreshStreakBar();
+  renderStreak();
+}
+function endStreak() { currentStreak = 0; renderStreak(); deactivatePowerMode(); }
+const debouncedEndStreak = debounce(endStreak, STREAK_TIMEOUT);
+
+const FRAME_MS = 1000 / 60;
+const fx = (function V2Fx() {
+  const particles = [];
+  let running = false, lastTime = 0, dpr = 1;
+  function sizeCanvas() {
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function spawnParticles(type) {
+    if (!powerMode) return;
+    const c = editor.getCursorPosition();
+    const p = editor.renderer.textToScreenCoordinates(c.row, c.column);
+    const color = PARTICLE_COLORS[type] || [255, 255, 255];
+    const n = sample(PARTICLE_NUM_RANGE);
+    for (let i = 0; i < n; i++) {
+      if (particles.length >= MAX_PARTICLES) particles.shift();
+      const r = PARTICLE_VELOCITY_RANGE;
+      particles.push({ x: p.pageX + 4, y: p.pageY + 10, alpha: 1, color,
+        vx: r.x[0] + Math.random() * (r.x[1] - r.x[0]), vy: r.y[0] + Math.random() * (r.y[1] - r.y[0]) });
+    }
+    if (!running) { running = true; lastTime = performance.now(); requestAnimationFrame(onFrame); }
+  }
+  function onFrame(time) {
+    const k = Math.min(time - lastTime, 100) / FRAME_MS;
+    lastTime = time;
+    const fade = Math.pow(PARTICLE_ALPHA_FADEOUT, k);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let w = 0;
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.vy += PARTICLE_GRAVITY * k; p.x += p.vx * k; p.y += p.vy * k; p.alpha *= fade;
+      if (p.alpha <= 0.1) continue;
+      particles[w++] = p;
+      ctx.fillStyle = `rgba(${p.color[0]}, ${p.color[1]}, ${p.color[2]}, ${p.alpha})`;
+      ctx.fillRect(Math.round(p.x - PARTICLE_SIZE / 2), Math.round(p.y - PARTICLE_SIZE / 2), PARTICLE_SIZE, PARTICLE_SIZE);
+    }
+    particles.length = w;
+    if (w > 0) requestAnimationFrame(onFrame); else running = false;
+  }
+  let shakeTimer;
+  function shake() {
+    if (!powerMode || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const i = 1 + 2 * Math.random() * Math.floor((currentStreak - POWER_MODE_ACTIVATION_THRESHOLD) / 100);
+    editorEl.style.transform = `translate3d(${i * (Math.random() > 0.5 ? -1 : 1)}px, ${i * (Math.random() > 0.5 ? -1 : 1)}px, 0)`;
+    clearTimeout(shakeTimer);
+    shakeTimer = setTimeout(() => { editorEl.style.transform = ""; }, 75);
+  }
+  const throttledShake = throttleLeading(shake, 100);
+  const throttledSpawn = throttleLeading(spawnParticles, 25);
+  function syncNewTokens() {
+    for (const el of editor.renderer.content.querySelectorAll(".ace_comment, .ace_string, .ace_constant")) {
+      if (el.__synced) continue;
+      el.__synced = true;
+      for (const a of el.getAnimations()) a.startTime = 0;
+    }
+  }
+  sizeCanvas();
+  window.addEventListener("resize", sizeCanvas);
+  editor.renderer.on("afterRender", syncNewTokens);
+  return {
+    onChange(delta) {
+      throttledShake();
+      const pos = delta.action === "insert" ? delta.end : delta.start;
+      const token = editor.session.getTokenAt(pos.row, pos.column);
+      defer(() => { if (token) throttledSpawn(token.type); });
+    },
+  };
+})();
+editor.session.on("change", (delta) => {
+  if (delta.action === "insert") { increaseStreak(); debouncedEndStreak(); }
+  fx.onChange(delta);
+});
+
+// "Core" publishes the Reveal as a one-way event; it doesn't know whether anything listens (ticket #9).
+let revealing = false;
+function setReveal(on) {
+  revealing = on;
+  body.classList.toggle("revealing", on);
+  if (!on) focusEditor();
+  window.dispatchEvent(new CustomEvent("citd:reveal", { detail: { revealing: on } }));
+}
+
+// ===========================================================================
+// "Enhancement": the Reaction overlay
+// ===========================================================================
+const rcanvas = $(".reaction-overlay");
+const rctx = rcanvas.getContext("2d");
+const rail = $(".hype-rail");
+const settings = { cap: 40, size: 56, duringReveal: "keep" };
+let rdpr = 1;
+function sizeReactionCanvas() {
+  rdpr = window.devicePixelRatio || 1;
+  rcanvas.width = Math.round(window.innerWidth * rdpr);
+  rcanvas.height = Math.round(window.innerHeight * rdpr);
+  rcanvas.style.width = window.innerWidth + "px";
+  rcanvas.style.height = window.innerHeight + "px";
+  spriteCache.clear();
+  measureLayout();
+}
+
+// Emoji are rasterised once per (emoji, size, dpr) and blitted with drawImage — no text shaping per frame.
+const spriteCache = new Map();
+function sprite(e) {
+  const key = e + settings.size + "@" + rdpr;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  const px = Math.round(settings.size * rdpr);
+  c = document.createElement("canvas");
+  c.width = c.height = Math.round(px * 1.3);
+  const g = c.getContext("2d");
+  g.font = `${px}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(e, c.width / 2, c.height / 2 + px * 0.06);
+  spriteCache.set(key, c);
+  return c;
+}
+
+// Layout is read on resize / Reveal / every 500 ms — never per Reaction (a flood would force a layout per message).
+const layout = { W: 0, H: 0, bandL: 0, bandR: 0, badge: null, cells: [] };
+let lastMeasure = 0;
+function measureLayout() {
+  lastMeasure = performance.now();
+  layout.W = window.innerWidth; layout.H = window.innerHeight;
+  const badge = $(".name-tag").getBoundingClientRect();
+  layout.badge = badge;
+  const btn = $(".button-bar").getBoundingClientRect();
+  const ref = revealing ? btn : $(".reference-screenshot-container").getBoundingClientRect();
+  layout.bandL = badge.right + 24;
+  layout.bandR = Math.min(btn.left, ref.left) - 24;
+  if (layout.bandR - layout.bandL < 120) { layout.bandL = layout.W * 0.3; layout.bandR = layout.W * 0.7; }
+  if (!rail.hidden) {
+    rail.style.left = (layout.bandL + layout.bandR) / 2 + "px";
+    layout.cells = [...rail.children].map((c) => c.getBoundingClientRect());
+  }
+}
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const easeOutBack = (t) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
+const sprites = [];
+const rstats = { arrivals: 0, drawn: 0, dropped: 0, arrivalsPs: 0, drawnPs: 0, droppedPs: 0,
+  frameCosts: [], frameCostMax: 0, loop: "idle (0 CPU)", rafFrames: 0, rafPs: 0 };
+
+// ---- Variant A: Float up ----
+function FloatUp() {
+  return {
+    key: "A", name: "Float up",
+    note: "Each Reaction rises from the bottom edge somewhere between the name badge and the buttons, wobbles, and fades out after ~3 s. One sprite per Reaction, up to the drawing cap; the rest are dropped.",
+    spawn(e) {
+      const s = settings.size;
+      return { e, x: rnd(layout.bandL + s / 2, layout.bandR - s / 2), y: layout.H + s * 0.2, t: 0,
+        life: rnd(2.6, 3.4), vy: -rnd(110, 170), wob: rnd(8, 18), f: rnd(0.6, 1.0), ph: rnd(0, 6.28), x0: 0 };
+    },
+    step(p, dt) {
+      p.t += dt;
+      if (!p.x0) p.x0 = p.x;
+      p.y += p.vy * dt;
+      p.x = p.x0 + p.wob * Math.sin(6.28 * p.f * p.t + p.ph);
+      p.scale = p.t < 0.2 ? easeOutBack(p.t / 0.2) : 1;
+      const fadeFrom = p.life * 0.55;
+      p.alpha = p.t < fadeFrom ? 1 : Math.max(0, 1 - (p.t - fadeFrom) / (p.life - fadeFrom));
+      p.rot = 0;
+      return p.t < p.life;
+    },
+  };
+}
+
+// ---- Variant C: Badge burst ----
+function BadgeBurst() {
+  let lastBump = 0;
+  return {
+    key: "C", name: "Badge burst",
+    note: "Reactions pop out of the top edge of the Contestant's name badge and drift up a little, so on a screen share they read as 'for Ada'. The badge bumps (throttled). Up to the drawing cap; the rest are dropped.",
+    spawn(e) {
+      const b = layout.badge, s = settings.size;
+      const now = performance.now();
+      if (now - lastBump > 160) {
+        lastBump = now;
+        $(".name-tag").animate([{ transform: "scale(1)" }, { transform: "scale(1.05)" }, { transform: "scale(1)" }], { duration: 160 });
+      }
+      return { e, x: rnd(b.left + s * 0.3, Math.max(b.left + s * 0.4, b.right - s * 0.3)), y: b.top + s * 0.25, t: 0,
+        life: rnd(1.4, 1.9), vx: rnd(-40, 40), vy: -rnd(70, 130), rot0: rnd(-0.35, 0.35) };
+    },
+    step(p, dt) {
+      p.t += dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy *= Math.pow(0.4, dt);
+      p.scale = p.t < 0.22 ? easeOutBack(p.t / 0.22) * 1.1 : 1.1;
+      p.alpha = p.t < p.life * 0.5 ? 1 : Math.max(0, 1 - (p.t - p.life * 0.5) / (p.life * 0.5));
+      p.rot = p.rot0;
+      return p.t < p.life;
+    },
+  };
+}
+
+// ---- Variant D: Fountain ----
+function Fountain() {
+  const G = 1700; // px/s²
+  return {
+    key: "D", name: "Fountain",
+    note: "Reactions are launched up from the bottom edge (between badge and buttons), arc to 20–50% of the screen height with gravity and spin, and fall back off-screen — Power Mode particle physics, emoji-sized. Up to the drawing cap.",
+    spawn(e) {
+      const s = settings.size;
+      const h = rnd(0.2, 0.5) * layout.H;
+      return { e, x: rnd(layout.bandL + s / 2, layout.bandR - s / 2), y: layout.H + s * 0.5, t: 0,
+        vx: rnd(-140, 140), vy: -Math.sqrt(2 * G * h), spin: rnd(-3, 3), rot: 0 };
+    },
+    step(p, dt) {
+      p.t += dt;
+      p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.spin * dt;
+      p.scale = p.t < 0.15 ? easeOutBack(p.t / 0.15) : 1;
+      p.alpha = 1;
+      return !(p.vy > 0 && p.y > layout.H + settings.size);
+    },
+  };
+}
+
+// ---- Variant B: Hype rail ----
+function HypeRail() {
+  const DRAIN_MS = 4000;
+  const cells = {};
+  let dirty = false;
+  return {
+    key: "B", name: "Hype rail",
+    note: "One bar at the bottom with the four emoji. Each Reaction bumps its counter (like a Combo for the crowd) and sends a small hop; a counter drains to 0 after 4 s without that emoji, and the bar fades out when all are quiet. DOM is written at most once per frame, so a flood costs nothing extra.",
+    start() {
+      rail.hidden = false;
+      rail.innerHTML = EMOJI.map((e) => `<div class="cell" data-e="${e}"><span class="e">${e}</span><span class="n">×0</span></div>`).join("");
+      for (const el of rail.children) cells[el.dataset.e] = { el, n: 0, shown: -1, last: 0, lastPop: 0, popAt: 0 };
+      measureLayout();
+    },
+    stop() { rail.hidden = true; rail.classList.remove("live"); rail.innerHTML = ""; },
+    count(e) { // called for every arrival, including those over the sprite cap
+      const c = cells[e];
+      c.n++; c.last = performance.now(); dirty = true;
+    },
+    spawn(e) {
+      const i = EMOJI.indexOf(e), r = layout.cells[i];
+      if (!r) return null;
+      return { e, x: r.left + 34, y: r.top + 4, t: 0, life: 0.7, vy: -220, small: true };
+    },
+    step(p, dt) {
+      p.t += dt; p.y += p.vy * dt; p.vy += 300 * dt;
+      p.scale = 0.6; p.alpha = Math.max(0, 1 - p.t / p.life); p.rot = 0;
+      return p.t < p.life;
+    },
+    frame(now) { // DOM writes, at most once per frame; returns true while anything is still changing
+      let anyHot = false;
+      for (const e of EMOJI) {
+        const c = cells[e];
+        if (c.n && now - c.last > DRAIN_MS) { c.n = 0; dirty = true; }
+        if (c.n) anyHot = true;
+      }
+      if (dirty) {
+        dirty = false;
+        for (const e of EMOJI) {
+          const c = cells[e];
+          if (c.shown === c.n) continue;
+          const grew = c.n > c.shown;
+          c.shown = c.n;
+          c.el.querySelector(".n").textContent = "×" + c.n;
+          c.el.classList.toggle("hot", c.n > 0);
+          if (grew && now - c.lastPop > 120) {
+            c.lastPop = now;
+            const big = c.n >= 10 ? Math.min(1.7, 1.15 + Math.log10(c.n) * 0.25) : 1.15;
+            c.el.querySelector(".e").animate([{ transform: "scale(1)" }, { transform: `scale(${big})` }, { transform: "scale(1)" }], { duration: 180 });
+          }
+        }
+        rail.classList.toggle("live", anyHot);
+      }
+      return anyHot;
+    },
+  };
+}
+
+const VARIANTS = { A: FloatUp, B: HypeRail, C: BadgeBurst, D: Fountain };
+const ORDER = ["A", "B", "C", "D"];
+let rv = null;
+let rRunning = false, rLast = 0;
+
+function applyRevealMode() {
+  const over = revealing && settings.duringReveal !== "hide";
+  for (const el of [rcanvas, rail]) {
+    el.classList.toggle("over-reveal", over);
+    el.classList.toggle("quiet", revealing && settings.duringReveal === "quiet");
+  }
+  rcanvas.style.visibility = revealing && settings.duringReveal === "hide" ? "hidden" : "";
+  rail.style.visibility = rcanvas.style.visibility;
+  if (revealing && settings.duringReveal === "hide") sprites.length = 0;
+  measureLayout();
+}
+window.addEventListener("citd:reveal", applyRevealMode);
+
+// One Reaction arrives (already parsed). O(1): count, then either push a sprite or drop it.
+function onReaction(e) {
+  rstats.arrivals++;
+  if (revealing && settings.duringReveal === "hide") { rstats.dropped++; return; }
+  if (rv.count) rv.count(e);
+  if (sprites.length >= settings.cap) { rstats.dropped++; wake(); return; }
+  const p = rv.spawn(e);
+  if (p) { sprites.push(p); rstats.drawn++; }
+  wake();
+}
+function wake() {
+  if (rRunning) return;
+  rRunning = true;
+  rstats.loop = "running";
+  rLast = performance.now();
+  requestAnimationFrame(rFrame);
+}
+function rFrame(now) {
+  const t0 = performance.now();
+  rstats.rafFrames++;
+  const dt = Math.min(now - rLast, 100) / 1000;
+  rLast = now;
+  if (t0 - lastMeasure > 500) measureLayout();
+  const busy = rv.frame ? rv.frame(now) : false;
+  rctx.setTransform(1, 0, 0, 1, 0, 0);
+  rctx.clearRect(0, 0, rcanvas.width, rcanvas.height);
+  let w = 0;
+  for (let i = 0; i < sprites.length; i++) {
+    const p = sprites[i];
+    if (!rv.step(p, dt)) continue;
+    sprites[w++] = p;
+    const img = sprite(p.e);
+    const cos = Math.cos(p.rot) * p.scale, sin = Math.sin(p.rot) * p.scale; // sprite is already at device resolution
+    rctx.globalAlpha = p.alpha;
+    rctx.setTransform(cos, sin, -sin, cos, p.x * rdpr, p.y * rdpr);
+    rctx.drawImage(img, -img.width / 2, -img.height / 2);
+  }
+  sprites.length = w;
+  rctx.globalAlpha = 1;
+  const cost = performance.now() - t0;
+  rstats.frameCosts.push(cost);
+  if (rstats.frameCosts.length > 600) rstats.frameCosts.shift();
+  rstats.frameCostMax = Math.max(rstats.frameCostMax, cost);
+  if (w > 0 || busy) requestAnimationFrame(rFrame);
+  else { rRunning = false; rstats.loop = "idle (0 CPU)"; rctx.setTransform(1, 0, 0, 1, 0, 0); rctx.clearRect(0, 0, rcanvas.width, rcanvas.height); }
+}
+
+// The "WebSocket": each message is its own task carrying a JSON string, as onmessage would deliver it.
+const socket = new MessageChannel();
+socket.port1.onmessage = (m) => {
+  let msg;
+  try { msg = JSON.parse(m.data); } catch { return; }
+  if (msg.t === "react" && EMOJI.includes(msg.e)) onReaction(msg.e);
+};
+const SEAT = "s-3f9c";
+function deliver(e) { socket.port2.postMessage(JSON.stringify({ t: "react", seat: SEAT, e })); }
+
+// Simulated crowd
+const crowd = { rate: params.get("quietCrowd") ? 3 : 20, mix: "mixed", carry: 0, last: performance.now() };
+const WEIGHTS = [["🔥", 0.4], ["👏", 0.3], ["😂", 0.2], ["😱", 0.1]];
+function pick() {
+  if (crowd.mix !== "mixed") return crowd.mix;
+  let r = Math.random();
+  for (const [e, w] of WEIGHTS) { if ((r -= w) < 0) return e; }
+  return "🔥";
+}
+setInterval(() => {
+  const now = performance.now();
+  crowd.carry += crowd.rate * (now - crowd.last) / 1000;
+  crowd.last = now;
+  // Poisson-ish: jitter how many go out this tick, but keep the average
+  let n = Math.floor(crowd.carry);
+  crowd.carry -= n;
+  for (let i = 0; i < n; i++) deliver(pick());
+}, 10);
+
+function setVariant(key) {
+  if (!VARIANTS[key]) key = "A";
+  if (rv && rv.stop) rv.stop();
+  sprites.length = 0;
+  rv = VARIANTS[key]();
+  if (rv.start) rv.start();
+  const url = new URL(location.href);
+  url.searchParams.set("variant", key);
+  history.replaceState(null, "", url);
+  $("#variant-label").textContent = `${rv.key} — ${rv.name}`;
+  $("#hud-note").textContent = rv.note;
+  wake();
+  focusEditor();
+}
+
+// ---------------------------------------------------------------------------
+// Instrumentation
+// ---------------------------------------------------------------------------
+const lat = { key: [], robo: [], longTasks: 0, longFrames: 0 };
+document.addEventListener("keydown", (e) => {
+  if (e.target !== editor.textInput.getElement()) return;
+  const t0 = e.timeStamp;
+  requestAnimationFrame(() => { lat.key.push(performance.now() - t0); if (lat.key.length > 300) lat.key.shift(); });
+}, true);
+if ((PerformanceObserver.supportedEntryTypes || []).includes("longtask")) {
+  new PerformanceObserver((list) => { lat.longTasks += list.getEntries().length; }).observe({ type: "longtask" });
+} else lat.longTasks = NaN; // Firefox / Safari: rely on the >50 ms frame-gap count instead
+function pct(arr, q) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+}
+
+// Robo-typist: a self-scheduling timer that inserts one char every 30 ms (a fast human).
+// "keystroke delay" = how late the keystroke ran + how long ACE's insert took; this is what a flood would inflate.
+const ROBO_TEXT = `<section class="cards">\n<!-- three cards -->\n<article class="card" data-n="1">\n<h2>Lorem "ipsum"</h2>\n<p style="color: #333">Dolor sit amet</p>\n</article>\n</section>\n`;
+let robo = null, roboIdx = 0;
+function roboTick() {
+  const now = performance.now();
+  const late = Math.max(0, now - robo.due);
+  editor.insert(ROBO_TEXT[roboIdx++ % ROBO_TEXT.length]);
+  lat.robo.push(late + (performance.now() - now));
+  if (lat.robo.length > 2000) lat.robo.shift();
+  robo.due = Math.max(robo.due + 30, performance.now() + 30); // if behind, the next one is due 30 ms from now
+  robo.timer = setTimeout(roboTick, Math.max(0, robo.due - performance.now()));
+}
+function setRobo(on) {
+  if (!on && robo) { clearTimeout(robo.timer); robo = null; }
+  if (on && !robo) { robo = { due: performance.now() + 30 }; robo.timer = setTimeout(roboTick, 30); }
+}
+
+let chaos = null;
+let gapLast = 0; // frame-gap watcher during the chaos test: gaps > 50 ms between frames (works where longtask is unsupported)
+let chaosText = "";
+function resetStats() {
+  lat.key = []; lat.robo = []; lat.longFrames = 0; if (!Number.isNaN(lat.longTasks)) lat.longTasks = 0;
+  rstats.frameCosts = []; rstats.frameCostMax = 0; rstats.arrivals = rstats.drawn = rstats.dropped = 0;
+}
+function jumpCombo(n) {
+  currentStreak = n - 1;
+  increaseStreak();
+  if (currentStreak < POWER_MODE_ACTIVATION_THRESHOLD) deactivatePowerMode();
+  debouncedEndStreak();
+}
+function runChaos() {
+  if (chaos) return;
+  resetStats();
+  const prevRate = crowd.rate;
+  jumpCombo(500);
+  setRobo(true);
+  crowd.rate = 1000;
+  chaos = { start: performance.now() };
+  gapLast = 0;
+  requestAnimationFrame(function gapWatch(t) {
+    if (!chaos) return;
+    if (gapLast && t - gapLast > 50) lat.longFrames++;
+    gapLast = t;
+    requestAnimationFrame(gapWatch);
+  });
+  chaosText = "Chaos test running… keep the tab visible for 10 s";
+  setTimeout(() => {
+    crowd.rate = prevRate;
+    setRobo(false);
+    const r = {
+      variant: rv.key, cap: settings.cap, arrivals: rstats.arrivals, drawn: rstats.drawn, dropped: rstats.dropped,
+      keystrokes: lat.robo.length,
+      keystrokeDelayP95: +pct(lat.robo, 0.95).toFixed(2), keystrokeDelayMax: +Math.max(0, ...lat.robo).toFixed(2),
+      overlayFrameP95: +pct(rstats.frameCosts, 0.95).toFixed(2), overlayFrameMax: +rstats.frameCostMax.toFixed(2),
+      longTasks: lat.longTasks, longFrames: lat.longFrames,
+    };
+    chaos = null;
+    window.__chaosResult = r;
+    console.log("CHAOS " + JSON.stringify(r));
+    const pass = r.keystrokeDelayP95 <= 8 && !(r.longTasks > 0) && r.longFrames === 0;
+    chaosText = `Chaos ${pass ? "PASS" : "FAIL"} — ${r.arrivals} arrived, ${r.drawn} drawn, ${r.dropped} dropped · keystroke delay p95 ${r.keystrokeDelayP95} ms (max ${r.keystrokeDelayMax}) · overlay frame p95 ${r.overlayFrameP95} ms (max ${r.overlayFrameMax}) · long tasks ${Number.isNaN(r.longTasks) ? "n/a" : r.longTasks} · frames >50 ms ${r.longFrames}`;
+  }, 10000);
+}
+window.__runChaos = (variant, cap) => { if (variant) setVariant(variant); if (cap) settings.cap = cap; runChaos(); };
+
+// HUD (also posted to the share-preview parent)
+setInterval(() => {
+  rstats.arrivalsPs = rstats.arrivals - (rstats._a || 0); rstats._a = rstats.arrivals;
+  rstats.drawnPs = rstats.drawn - (rstats._d || 0); rstats._d = rstats.drawn;
+  rstats.droppedPs = rstats.dropped - (rstats._x || 0); rstats._x = rstats.dropped;
+  rstats.rafPs = rstats.rafFrames; rstats.rafFrames = 0;
+  const rows = [
+    ["variant", rv.key],
+    ["power mode", powerMode ? "ON" : "off"],
+    ["reveal", revealing ? settings.duringReveal : "off"],
+    ["crowd rate", crowd.rate + "/s"],
+    ["arrived/s", rstats.arrivalsPs],
+    ["drawn/s", rstats.drawnPs],
+    ["dropped/s", `<span class="${rstats.droppedPs ? "warn" : ""}">${rstats.droppedPs}</span>`],
+    ["live sprites", `${sprites.length} / ${settings.cap >= 100000 ? "∞" : settings.cap}`],
+    ["overlay loop", `<span class="${rstats.loop.startsWith("idle") ? "ok" : "warn"}">${rstats.loop}</span>`],
+    ["overlay frames/s", rstats.rafPs],
+    ["overlay frame p95", pct(rstats.frameCosts, 0.95).toFixed(2) + " ms"],
+    ["overlay frame max", rstats.frameCostMax.toFixed(2) + " ms"],
+    ["key→frame p95", pct(lat.key, 0.95).toFixed(1) + " ms"],
+    ["robo delay p95", pct(lat.robo, 0.95).toFixed(2) + " ms"],
+    ["long tasks", Number.isNaN(lat.longTasks) ? "n/a" : lat.longTasks],
+    ["combo", currentStreak],
+  ];
+  const grid = rows.map(([k, v]) => `<div><span class="k">${k}</span> <span class="v">${v}</span></div>`).join("");
+  $("#hud-grid").innerHTML = grid;
+  $("#hud-chaos").textContent = chaosText;
+  if (MODE === "embed") parent.postMessage({ proto: "stats", grid, label: $("#variant-label").textContent,
+    note: rv.note, chaos: chaosText, robo: robo ? "Robo-typist: ON" : "Robo-typist: off",
+    reveal: revealing ? "Reveal: ON" : "Reveal: off" }, "*");
+}, 1000);
+
+act = (name, value) => {
+  const i = ORDER.indexOf(rv.key);
+  if (name === "prev") setVariant(ORDER[(i + ORDER.length - 1) % ORDER.length]);
+  else if (name === "next") setVariant(ORDER[(i + 1) % ORDER.length]);
+  else if (name === "hud") $("#hud").hidden = !$("#hud").hidden;
+  else if (name === "set:share") return setShare(value);
+  else if (name === "set:rate") crowd.rate = Number(value);
+  else if (name === "set:mix") crowd.mix = value;
+  else if (name === "set:cap") settings.cap = Number(value);
+  else if (name === "set:size") { settings.size = Number(value); spriteCache.clear(); }
+  else if (name === "set:duringReveal") { settings.duringReveal = value; applyRevealMode(); }
+  else if (name === "send") deliver(value);
+  else if (name === "burst") { const e = pick(); for (let k = 0; k < 30; k++) setTimeout(() => deliver(crowd.mix === "mixed" ? e : pick()), k * 33); }
+  else if (name === "combo0") jumpCombo(0);
+  else if (name === "combo500") jumpCombo(500);
+  else if (name === "robo") setRobo(!robo);
+  else if (name === "reveal") setReveal(!revealing);
+  else if (name === "chaos") runChaos();
+  else if (name === "resetStats") resetStats();
+  const rb = $('[data-act="robo"]'); if (rb) rb.textContent = robo ? "Robo-typist: ON" : "Robo-typist: off";
+  const rvb = $('[data-act="reveal"]'); if (rvb) rvb.textContent = revealing ? "Reveal: ON" : "Reveal: off";
+  if (!revealing) focusEditor();
+};
+wireControls();
+window.addEventListener("message", (e) => {
+  if (e.data && e.data.proto === "act") act(e.data.name, e.data.value);
+});
+// ←/→ cycle variants only when the editor isn't focused (it usually is — use the arrows).
+document.addEventListener("keydown", (e) => {
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) return;
+  if (e.key === "ArrowLeft") act("prev");
+  if (e.key === "ArrowRight") act("next");
+});
+window.addEventListener("resize", sizeReactionCanvas);
+
+sizeReactionCanvas();
+$("#hud").hidden = MODE === "solo" && !params.has("hud");
+setVariant(params.get("variant") || "A");
+}
+</script>
+</body>
+</html>
