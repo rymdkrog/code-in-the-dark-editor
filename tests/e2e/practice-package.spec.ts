@@ -102,6 +102,8 @@ test("it looks like the original: vibrant_ink, 20px monospace code, no active li
     return context.measureText("abcdefghij").width / 10;
   });
   const cursorX = async () => (await page.locator(".ace_cursor").boundingBox())!.x;
+  // ACE draws the cursor on its next frame; under load, reading it sooner gets a stale spot.
+  await nextFrame(page);
   const before = await cursorX();
   await page.keyboard.type("abcdefghij");
   await expect.poll(async () => Math.abs((await cursorX()) - (before + 10 * glyphWidth))).toBeLessThan(1.5);
