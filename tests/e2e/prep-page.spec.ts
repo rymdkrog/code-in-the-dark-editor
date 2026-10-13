@@ -104,7 +104,10 @@ test("an asset over 32 MB gets a warning", async ({ page }) => {
   await expect(page.getByText(/Huge\.woff2 is over 32 MB/)).toBeVisible();
 });
 
-test("the Competition-wide rules are pre-filled, editable, and reach the package", async ({ page }, testInfo) => {
+test("the Competition-wide rules are pre-filled, editable, and reach the package", async ({
+  page,
+  browser,
+}, testInfo) => {
   await newRound(page);
   await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
   await page.getByRole("button", { name: /Competition/ }).click();
@@ -115,9 +118,9 @@ test("the Competition-wide rules are pre-filled, editable, and reach the package
   await page.getByRole("button", { name: /^Heat 1/ }).click();
   const exported = await exportRound(page, testInfo);
 
-  const html = readFileSync(exported.path, "utf8");
-  const round = JSON.parse(html.match(/<script type="application\/json" id="round">([\s\S]*?)<\/script>/)![1]!);
-  expect(round.instructions.rules).toBe("Only HTML and CSS.\nNo preview.");
+  const opened = await openPackage(browser, exported.path);
+  expect(opened.round.instructions.rules).toBe("Only HTML and CSS.\nNo preview.");
+  await opened.close();
 });
 
 test("each export keeps the Round id and stamps a new Revision", async ({ page, browser }, testInfo) => {

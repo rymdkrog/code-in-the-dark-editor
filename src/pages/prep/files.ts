@@ -4,7 +4,7 @@
 import type { Asset } from "./competition.ts";
 
 /** Reads a file as an asset, with its pixel dimensions if the browser can decode it as an image. */
-export async function readAsset(file: File, name = file.name): Promise<Asset> {
+export async function readAsset(file: File): Promise<Asset> {
   const dataUri = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -12,7 +12,7 @@ export async function readAsset(file: File, name = file.name): Promise<Asset> {
     reader.readAsDataURL(file);
   });
   const size = file.type.startsWith("image/") ? await imageSize(dataUri) : null;
-  return { name, dataUri, width: size?.width ?? null, height: size?.height ?? null };
+  return { name: file.name, dataUri, width: size?.width ?? null, height: size?.height ?? null };
 }
 
 function imageSize(src: string): Promise<{ width: number; height: number } | null> {

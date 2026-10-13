@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from "react";
 import {
   assetNameProblem,
-  DATA_URI_LIMIT,
+  estimatedPackageBytes,
+  fileBytes,
   formatRevision,
+  isOversized,
   packageFileName,
   type Asset,
   type Competition,
@@ -22,12 +24,9 @@ interface Props {
 export function RoundView({ competition, round, templateSize, onChange, onExport }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<string[]>([]);
-  const last = round.revisions.at(-1);
-  const files = round.reference ? [round.reference, ...round.assets] : round.assets;
-  const packageSize =
-    templateSize === null
-      ? null
-      : templateSize + competition.rules.length + files.reduce((sum, file) => sum + file.dataUri.length, 0);
+  const lastRevision = round.revisions.at(-1);
+  const oversized = (round.reference ? [round.reference, ...round.assets] : round.assets).filter(isOversized);
+  const packageSize = templateSize === null ? null : estimatedPackageBytes(competition, round, templateSize);
 
   const setReference = async (file: File | undefined) => {
     if (!file) return;
@@ -40,14 +39,14 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
     onChange((round) => ({ ...round, reference }));
   };
 
-  const addAssets = async (files: File[]) => {
+  const addAssets = async (dropped: File[]) => {
     const refused: string[] = [];
     const accepted: File[] = [];
-    for (const file of files) {
+    for (const file of dropped) {
       // Checked against this batch too, so two clashing files added together can't both get in.
-      const taken = [...round.assets, ...accepted.map((file) => ({ name: file.name }) as Asset)];
-      const problem = assetNameProblem({ ...round, assets: taken }, file.name);
-      if (problem) refused.push(problem);
+      const taken = [...round.assets, ...accepted].map((other) => other.name);
+      const refusal = assetNameProblem(taken, file.name);
+      if (refusal) refused.push(refusal);
       else accepted.push(file);
     }
     setRefusals(refused);
@@ -76,13 +75,13 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
           {packageFileName(competition, round)}
           {packageSize !== null && ` · ≈ ${formatBytes(packageSize)}`}
         </span>
-        {last && (
+        {lastRevision && (
           <span className="chip" title="Exported at this time, UTC">
-            {formatRevision(last)}
+            {formatRevision(lastRevision)}
           </span>
         )}
         <button className="go" onClick={onExport} disabled={!round.reference || templateSize === null}>
-          {last ? "Re-export" : "Export"}
+          {lastRevision ? "Re-export" : "Export"}
         </button>
       </div>
       <div className="work">
@@ -137,9 +136,7 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
           <Notices className="problem" role="alert" notices={refusals} />
           <Notices
             className="warn"
-            notices={files
-              .filter(isOversized)
-              .map((file) => `${file.name} is over 32 MB inside the package, so Firefox ESR can't load it.`)}
+            notices={oversized.map((file) => `${file.name} is over 32 MB inside the package, so Firefox ESR can't load it.`)}
           />
         </section>
       </div>
@@ -203,12 +200,6 @@ function DropZone({ onDrop, children }: { onDrop(files: File[]): void; children:
     </div>
   );
 }
-
-/** Firefox ESR's limit is on the data: URI, which base64 makes a third bigger than the file. */
-const isOversized = (file: Asset) => file.dataUri.length > DATA_URI_LIMIT;
-
-/** The size of the file an asset was read from. */
-const fileBytes = (file: Asset) => Math.floor(((file.dataUri.length - file.dataUri.indexOf(",") - 1) * 3) / 4);
 
 const MB = 1024 * 1024;
 

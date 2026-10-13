@@ -36,20 +36,18 @@ function reducer(competition: Competition, action: Action): Competition {
   }
 }
 
-/** The selected Round's id, or the Competition pane. */
-type Selection = string | "competition";
-
 export function PrepPage() {
   const [competition, dispatch] = useReducer(reducer, undefined, newCompetition);
-  const [selection, setSelection] = useState<Selection>("competition");
+  // The Round on show, or null for the Competition pane.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const template = useTemplate();
-  const round = competition.rounds.find((candidate) => candidate.id === selection);
+  const round = competition.rounds.find((candidate) => candidate.id === selectedId);
   const hasFinal = competition.rounds.some((candidate) => candidate.kind === "final");
 
   const add = (kind: Round["kind"]) => {
     const id = mintRoundId();
     dispatch({ type: "add-round", kind, id });
-    setSelection(id);
+    setSelectedId(id);
   };
 
   const exportRound = (round: Round) => {
@@ -73,8 +71,8 @@ export function PrepPage() {
           <span className="dim">Organizer prep</span>
         </label>
         <button
-          className={`nav ${selection === "competition" ? "on" : ""}`}
-          onClick={() => setSelection("competition")}
+          className={`nav ${selectedId === null ? "on" : ""}`}
+          onClick={() => setSelectedId(null)}
         >
           <span>⚙ Competition</span>
           <span className="sub">rules</span>
@@ -83,8 +81,8 @@ export function PrepPage() {
         {competition.rounds.map((candidate) => (
           <button
             key={candidate.id}
-            className={`nav ${selection === candidate.id ? "on" : ""}`}
-            onClick={() => setSelection(candidate.id)}
+            className={`nav ${selectedId === candidate.id ? "on" : ""}`}
+            onClick={() => setSelectedId(candidate.id)}
           >
             <span>{candidate.name || <i>unnamed</i>}</span>
             <span className="sub">

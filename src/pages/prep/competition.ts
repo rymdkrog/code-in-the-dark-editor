@@ -34,7 +34,7 @@ export interface Competition {
   rounds: Round[];
 }
 
-export const DEFAULT_RULES = [
+const DEFAULT_RULES = [
   "Recreate the Reference using only HTML and CSS.",
   "You will not see your result until the Reveal at the end of the Round.",
   "No previews, no developer tools, no measuring, no looking things up.",
@@ -75,7 +75,7 @@ export function mintRoundId(): string {
   return [...crypto.getRandomValues(new Uint8Array(10))].map((byte) => ID_ALPHABET[byte % 32]).join("");
 }
 
-export function slugify(text: string): string {
+function slugify(text: string): string {
   return text
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -91,14 +91,27 @@ export function packageFileName(competition: Competition, round: Round): string 
 
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-/** Why a Round can't take an asset with this name, or null if it can. */
-export function assetNameProblem(round: Round, name: string): string | null {
+/** Why an asset can't take this name beside the names already taken, or null if it can. */
+export function assetNameProblem(taken: string[], name: string): string | null {
   if (!ASSET_NAME.test(name)) {
     return `Refused “${name}”: use only letters, digits, “.”, “-” and “_”, starting with a letter or digit. Rename it and add it again.`;
   }
-  const clash = round.assets.find((asset) => asset.name.toLowerCase() === name.toLowerCase());
-  if (clash) return `Refused “${name}”: it clashes with “${clash.name}”, and the Reveal matches names case-insensitively.`;
+  const clash = taken.find((other) => other.toLowerCase() === name.toLowerCase());
+  if (clash) return `Refused “${name}”: it clashes with “${clash}”, and the Reveal matches names case-insensitively.`;
   return null;
+}
+
+/** Firefox ESR's limit is on the data: URI, which base64 makes a third bigger than the file. */
+export const isOversized = (asset: Asset) => asset.dataUri.length > DATA_URI_LIMIT;
+
+/** The size of the file an asset was read from. */
+export const fileBytes = (asset: Asset) =>
+  Math.floor(((asset.dataUri.length - asset.dataUri.indexOf(",") - 1) * 3) / 4);
+
+/** Roughly how big a Round's package will be, given the template's size. */
+export function estimatedPackageBytes(competition: Competition, round: Round, templateBytes: number): number {
+  const files = round.reference ? [round.reference, ...round.assets] : round.assets;
+  return templateBytes + competition.rules.length + files.reduce((sum, file) => sum + file.dataUri.length, 0);
 }
 
 /** The next Revision of a Round, stamped with the UTC minute of `now`. */
