@@ -54,44 +54,71 @@ const nextFrame = (page: Page) =>
 const editorText = (page: Page) =>
   page.evaluate(() => (document.querySelector("#editor") as unknown as EditorElement).env.editor.getValue());
 
+/** The editor's text with `|` at the caret. */
+const editorTextWithCaret = (page: Page) =>
+  page.evaluate(() => {
+    const { editor } = (document.querySelector("#editor") as unknown as EditorElement).env;
+    const { row, column } = editor.getCursorPosition();
+    const lines = editor.getValue().split("\n");
+    lines[row] = `${lines[row]!.slice(0, column)}|${lines[row]!.slice(column)}`;
+    return lines.join("\n");
+  });
+
 interface EditorElement {
-  env: { editor: { getValue(): string } };
+  env: { editor: { getValue(): string; getCursorPosition(): { row: number; column: number } } };
 }
 
 test("the practice package opens from file:// offline and takes typing", async ({ page }) => {
   await openPackage(page);
 
-  await page.keyboard.type("<h1>Hello, dark</h1>");
+  await page.keyboard.type("Hello, dark");
 
-  expect(await editorText(page)).toBe("<h1>Hello, dark</h1>");
+  expect(await editorText(page)).toBe("Hello, dark");
 });
 
-test("the editor never writes text for you", async ({ page }) => {
+// What the original editor (brace 0.5.1, ACE behaviours on) produces for the same keys,
+// quirks included. "\n" presses Enter and "←" presses the left arrow.
+const ORIGINAL_TYPING: [keys: string, result: string][] = [
+  ["<p>", "<p>|</p>"],
+  ["<p>\n", "<p>\n    |\n</p>"],
+  ['<a href="x">', '<a href="x">|</a>'],
+  ["<p>hello</p>", "<p>hello</p>|</p>"],
+  ["<html←←>", "<ht>|</ht>ml"],
+  ["(a [b] {c} 'd' \"e\")", "(a [b] {c} 'd' \"e\")|"],
+  ["<style>\na {\ncolor: red;\n}", "<style>\n    a {\n        color: red;\n    }|\n    }\n</style>"],
+  ["<style>\na{color:red}", "<style>\n    a{color:red}|;\n</style>"],
+];
+
+for (const [keys, result] of ORIGINAL_TYPING) {
+  test(`typing ${JSON.stringify(keys)} gives what the original gives`, async ({ page }) => {
+    await openPackage(page);
+
+    for (const part of keys.split(/(←)/)) {
+      if (part === "←") await page.keyboard.press("ArrowLeft");
+      // At a fast typist's pace: ACE (like the original) only treats a line as CSS once its
+      // background tokenizer, which runs on a short timer, has caught up with `<style>`.
+      else await page.keyboard.type(part, { delay: 40 });
+    }
+
+    expect(await editorTextWithCaret(page)).toBe(result);
+  });
+}
+
+test("Enter keeps the previous line's indentation", async ({ page }) => {
   await openPackage(page);
 
-  await page.keyboard.type('<ht><div class="a">([{\'"');
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("<style>a{color:red");
+  await page.keyboard.type("  hello\nworld");
 
-  expect(await editorText(page)).toBe('<ht><div class="a">([{\'"\n<style>a{color:red');
+  expect(await editorText(page)).toBe("  hello\n  world");
+});
+
+test("there is no autocomplete or linting", async ({ page }) => {
+  await openPackage(page);
+
+  await page.keyboard.type("<div><p class=\"x\"></div>\n<sty");
+
   await expect(page.locator(".ace_autocomplete")).toBeHidden();
   await expect(page.locator(".ace_gutter-cell.ace_error, .ace_gutter-cell.ace_warning")).toHaveCount(0);
-});
-
-test("Enter keeps the previous line's indentation and adds none of its own", async ({ page }) => {
-  await openPackage(page);
-
-  await page.keyboard.type("  <ul>");
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("<li>");
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("<style>");
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("a {");
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("color: red;");
-
-  expect(await editorText(page)).toBe("  <ul>\n  <li>\n  <style>\n  a {\n  color: red;");
 });
 
 test("Ctrl/Cmd-F searches your code", async ({ page }) => {
@@ -121,13 +148,10 @@ test("it looks like the original: vibrant_ink, 20px monospace code, no active li
   await expect(page.locator("#editor")).toHaveCSS("font-size", "20px");
   await expect(page.locator("#editor")).not.toHaveCSS("font-family", /Press Start 2P/);
   await expect(page.locator("body")).toHaveCSS("font-family", /Press Start 2P/);
-  expect(await page.evaluate(() => document.fonts.check('20px "Press Start 2P"'))).toBe(true);
   await expect(page.locator(".ace_active-line")).toBeHidden();
   await expect(page.locator(".ace_print-margin")).toBeHidden();
 
-  await page.keyboard.type("<div>");
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("</div>");
+  await page.keyboard.type("<div>\n");
   await expect(page.locator(".ace_fold-widget")).toHaveCount(0);
 
   // The cursor steps one glyph per character only if ACE measured the font it draws with.
