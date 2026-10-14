@@ -1,7 +1,7 @@
 // Small pieces the prep page and the Worker's pages share.
 
 import { useEffect, useReducer, useState } from "react";
-import type { Lifecycle } from "../protocol/protocol.ts";
+import type { Lifecycle, Phase } from "../protocol/protocol.ts";
 import { EDITOR_VERSION } from "./version.ts";
 
 export const VersionFooter = ({ className }: { className?: string }) => (
@@ -25,6 +25,18 @@ export function CopyButton({ text, label, className }: { text: string; label: st
 
 /** A secret's first characters, enough to tell two apart, and the rest masked. */
 export const maskSecret = (secret: string) => `${secret.slice(0, 4)}${"•".repeat(16)}`;
+
+export const PHASE_LABELS: Record<Phase, string> = {
+  upcoming: "Up next",
+  running: "Running",
+  timesup: "Time's up",
+  voting: "Voting",
+  results: "Results",
+};
+
+export const PhaseChip = ({ phase }: { phase: Phase }) => (
+  <span className={`chip ph-${phase}`}>{PHASE_LABELS[phase]}</span>
+);
 
 /** The Round clock: the time left while running, counted from `endsAt` so it keeps going while
  * offline; the duration while up next; and 00:00 once time is up. Amber in the last minute, red

@@ -82,8 +82,8 @@ test("the QR on the Stage opens the Audience phone page with the Join code", asy
   const phone = await context.newPage();
   await phone.goto(label!.replace(/^QR code for /, ""));
 
-  await expect(phone.getByRole("heading", { name: "Join the Audience" })).toBeVisible();
-  await expect(phone.getByText(joinCode)).toBeVisible();
+  await expect(phone.getByText("✓ You're in")).toBeVisible();
+  expect(new URL(phone.url()).searchParams.get("c")).toBe(joinCode);
 });
 
 test("the Stage's clock turns amber in the last minute and throbs pink in the last 10 s", async ({ page }) => {

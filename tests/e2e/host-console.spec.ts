@@ -173,6 +173,6 @@ test("a Host console link whose claim is missing says so", async ({ page }) => {
 });
 
 test("the Worker serves the Audience phone page", async ({ page }) => {
-  await page.goto(`${WORKER_URL}/join/?c=K7XQ2N`);
-  await expect(page.getByRole("heading", { name: "Join the Audience" })).toBeVisible();
+  await page.goto(`${WORKER_URL}/join/`);
+  await expect(page.getByRole("heading", { name: "Enter the code on the Stage" })).toBeVisible();
 });

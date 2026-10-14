@@ -1,9 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Placeholder } from "../Placeholder.tsx";
+import { AudiencePhone } from "./AudiencePhone.tsx";
+import "./join.css";
 
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
-    <Placeholder title="Join the Audience" />
+    <AudiencePhone />
   </StrictMode>,
 );

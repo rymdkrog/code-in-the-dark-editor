@@ -12,15 +12,7 @@ import {
   type Phase,
 } from "../../protocol/protocol.ts";
 import { stageLink } from "../links.ts";
-import { CopyButton, formatClock, RoundClock, VersionFooter } from "../shared.tsx";
-
-const PHASE_LABELS: Record<Phase, string> = {
-  upcoming: "Up next",
-  running: "Running",
-  timesup: "Time's up",
-  voting: "Voting",
-  results: "Results",
-};
+import { CopyButton, formatClock, PHASE_LABELS, PhaseChip, RoundClock, VersionFooter } from "../shared.tsx";
 
 /** The phases a Round can't be switched away from without asking, and what switching costs. */
 const SWITCHING_COSTS: Partial<Record<Phase, string>> = {
@@ -249,8 +241,6 @@ function Clock({ lifecycle }: { lifecycle: Lifecycle }) {
   if (lifecycle.phase === "voting" || lifecycle.phase === "results") return null;
   return <RoundClock lifecycle={lifecycle} className="mono" />;
 }
-
-const PhaseChip = ({ phase }: { phase: Phase }) => <span className={`chip ph-${phase}`}>{PHASE_LABELS[phase]}</span>;
 
 function Stepper({ phase }: { phase: Phase }) {
   const at = PHASES.indexOf(phase);
