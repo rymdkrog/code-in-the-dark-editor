@@ -40,11 +40,13 @@ for (const [keys, result] of ORIGINAL_TYPING) {
   test(`typing ${JSON.stringify(keys)} gives what the original gives`, async ({ page }) => {
     await openPackage(page);
 
-    for (const part of keys.split(/(←)/)) {
-      if (part === "←") await page.keyboard.press("ArrowLeft");
-      // At a fast typist's pace: ACE (like the original) only treats a line as CSS once its
-      // background tokenizer, which runs on a short timer, has caught up with `<style>`.
-      else await page.keyboard.type(part, { delay: 40 });
+    // A frame after each key, as at a typist's pace: ACE (like the original) only treats a line
+    // as CSS once it has been tokenized, which rendering does. A fixed delay between keys isn't
+    // enough on a busy machine, where a key can come before the frame that renders the last one.
+    for (const key of keys) {
+      if (key === "←") await page.keyboard.press("ArrowLeft");
+      else await page.keyboard.type(key);
+      await nextFrame(page);
     }
 
     expect(await editorTextWithCaret(page)).toBe(result);
