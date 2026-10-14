@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   assetNameProblem,
   estimatedPackageBytes,
@@ -6,9 +6,12 @@ import {
   formatRevision,
   isOversized,
   packageFileName,
+  roundStatus,
+  statusLabel,
   type Asset,
   type Competition,
   type Round,
+  type RoundStatus,
 } from "./competition.ts";
 import { readAsset } from "./files.ts";
 
@@ -24,7 +27,7 @@ interface Props {
 export function RoundView({ competition, round, templateSize, onChange, onExport }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<string[]>([]);
-  const lastRevision = round.revisions.at(-1);
+  const status = roundStatus(competition, round);
   const oversized = (round.reference ? [round.reference, ...round.assets] : round.assets).filter(isOversized);
   const packageSize = templateSize === null ? null : estimatedPackageBytes(competition, round, templateSize);
 
@@ -75,15 +78,14 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
           {packageFileName(competition, round)}
           {packageSize !== null && ` · ≈ ${formatBytes(packageSize)}`}
         </span>
-        {lastRevision && (
-          <span className="chip" title="Exported at this time, UTC">
-            {formatRevision(lastRevision)}
-          </span>
-        )}
-        <button className="go" onClick={onExport} disabled={!round.reference || templateSize === null}>
-          {lastRevision ? "Re-export" : "Export"}
+        <StatusLabel status={status} />
+        <button className="go" onClick={onExport} disabled={status.kind === "problem" || templateSize === null}>
+          {round.revisions.length ? "Re-export" : "Export"}
         </button>
       </div>
+      {status.kind === "problem" && (
+        <Notices className="problem topbar-problems" notices={status.problems} />
+      )}
       <div className="work">
         <section>
           <h3>Reference</h3>
@@ -138,6 +140,7 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
             className="warn"
             notices={oversized.map((file) => `${file.name} is over 32 MB inside the package, so Firefox ESR can't load it.`)}
           />
+          <RevisionHistory round={round} />
         </section>
       </div>
     </>
@@ -165,6 +168,47 @@ function AssetTable({ assets, onRemove }: { assets: Asset[]; onRemove(name: stri
         ))}
       </tbody>
     </table>
+  );
+}
+
+const STATUS_CLASSES: Record<RoundStatus["kind"], string> = {
+  problem: "problem",
+  "not exported": "needs-export",
+  changed: "needs-export",
+  exported: "exported",
+};
+
+/** Whether a Round has a problem, still needs exporting, or is up to date. */
+export function StatusLabel({ status }: { status: RoundStatus }) {
+  return (
+    <span
+      className={`status ${STATUS_CLASSES[status.kind]}`}
+      title={"last" in status ? `Last exported: ${formatRevision(status.last)} UTC` : undefined}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+/** Every export of the Round, newest first, under the id that ties them together. */
+function RevisionHistory({ round }: { round: Round }) {
+  const heading = useId();
+  return (
+    <section className="revisions" aria-labelledby={heading}>
+      <h3 id={heading}>Revisions</h3>
+      <p className="dim">
+        Round id <code>{round.id}</code>, kept across re-exports so Contestants' autosave carries over.
+      </p>
+      {round.revisions.length ? (
+        <ol reversed>
+          {[...round.revisions].reverse().map((revision) => (
+            <li key={revision.n}>{formatRevision(revision)}</li>
+          ))}
+        </ol>
+      ) : (
+        <p className="dim">Not exported yet.</p>
+      )}
+    </section>
   );
 }
 

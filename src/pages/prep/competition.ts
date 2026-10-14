@@ -16,6 +16,8 @@ export interface Revision {
   n: number;
   /** The counter plus the UTC minute of the export, e.g. `3-202610121403`. */
   stamp: string;
+  /** A fingerprint of what the package was made from, to tell whether the Round has changed since. */
+  fingerprint: string;
 }
 
 export interface Round {
@@ -84,10 +86,16 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** `citd-<prefix>-<round-slug>.html`, the prefix derived from the Competition name. */
+/** What the Competition's file names start with, derived from its name. */
+const filePrefix = (competition: Competition) => slugify(competition.name) || "competition";
+
+/** `citd-<prefix>-<round-slug>.html`. */
 export function packageFileName(competition: Competition, round: Round): string {
-  return `citd-${slugify(competition.name) || "competition"}-${slugify(round.name) || "round"}.html`;
+  return `citd-${filePrefix(competition)}-${slugify(round.name) || "round"}.html`;
 }
+
+/** `<prefix>.citd-competition.json`. */
+export const competitionFileName = (competition: Competition) => `${filePrefix(competition)}.citd-competition.json`;
 
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -115,10 +123,104 @@ export function estimatedPackageBytes(competition: Competition, round: Round, te
 }
 
 /** The next Revision of a Round, stamped with the UTC minute of `now`. */
-export function nextRevision(round: Round, now: Date): Revision {
+export function nextRevision(competition: Competition, round: Round, now: Date): Revision {
   const n = (round.revisions.at(-1)?.n ?? 0) + 1;
-  return { n, stamp: `${n}-${now.toISOString().slice(0, 16).replace(/[-T:]/g, "")}` };
+  return {
+    n,
+    stamp: `${n}-${now.toISOString().slice(0, 16).replace(/[-T:]/g, "")}`,
+    fingerprint: packageFingerprint(competition, round),
+  };
 }
+
+/** cyrb53: a fast 53-bit string hash. Not cryptographic; it only has to notice a change. */
+function hash(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ char, 2654435761);
+    h2 = Math.imul(h2 ^ char, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+// Hashing a 30 MB data: URI takes a while, and an Asset never changes, so each is hashed once.
+const hashedAssets = new WeakMap<Asset, Asset>();
+
+function hashedAsset(asset: Asset): Asset {
+  let hashed = hashedAssets.get(asset);
+  if (!hashed) hashedAssets.set(asset, (hashed = { ...asset, dataUri: hash(asset.dataUri) }));
+  return hashed;
+}
+
+/**
+ * A fingerprint of everything a Round's package is made from, bar its Revision: the same
+ * fingerprint means exporting again would make the same package under the same file name.
+ */
+export function packageFingerprint(competition: Competition, round: Round): string {
+  if (!round.reference) return "";
+  const hashed = { ...round, reference: hashedAsset(round.reference), assets: round.assets.map(hashedAsset) };
+  return hash(JSON.stringify([packageFileName(competition, round), roundData(competition, hashed, { stamp: "" }, "")]));
+}
+
+/** Another Round that would export to the same file name as this one. */
+export const fileNameClash = (competition: Competition, round: Round): Round | undefined =>
+  competition.rounds.find(
+    (other) => other.id !== round.id && packageFileName(competition, other) === packageFileName(competition, round),
+  );
+
+/** Why a Round can't be exported yet. */
+export function roundProblems(competition: Competition, round: Round): string[] {
+  const problems: string[] = [];
+  if (!round.reference) problems.push("It has no Reference yet.");
+  const clash = fileNameClash(competition, round);
+  if (clash) {
+    problems.push(
+      `It would export as ${packageFileName(competition, round)}, the same file as ${clash.name || "an unnamed Round"}. Rename one of them.`,
+    );
+  }
+  return problems;
+}
+
+/** Whether a Round can't be exported, still needs exporting, or matches its last Revision. */
+export type RoundStatus =
+  | { kind: "problem"; problems: string[] }
+  | { kind: "not exported" }
+  | { kind: "changed"; last: Revision }
+  | { kind: "exported"; last: Revision };
+
+/** Where a Round stands; any change that reaches its package makes it "changed". */
+export function roundStatus(competition: Competition, round: Round): RoundStatus {
+  const problems = roundProblems(competition, round);
+  if (problems.length) return { kind: "problem", problems };
+  const last = round.revisions.at(-1);
+  if (!last) return { kind: "not exported" };
+  return last.fingerprint === packageFingerprint(competition, round)
+    ? { kind: "exported", last }
+    : { kind: "changed", last };
+}
+
+/** "problem", "not exported", "changed since Rev N" or "Rev N exported". */
+export function statusLabel(status: RoundStatus): string {
+  switch (status.kind) {
+    case "problem":
+    case "not exported":
+      return status.kind;
+    case "changed":
+      return `changed since Rev ${status.last.n}`;
+    case "exported":
+      return `Rev ${status.last.n} exported`;
+  }
+}
+
+/** What Export N changed downloads: every ready Round that's new or changed since its last export. */
+export const changedRounds = (competition: Competition): Round[] =>
+  competition.rounds.filter((round) => {
+    const { kind } = roundStatus(competition, round);
+    return kind === "not exported" || kind === "changed";
+  });
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -129,7 +231,12 @@ export function formatRevision({ n, stamp }: Revision): string {
 }
 
 /** What the Round package for one Revision of a Round carries in its data slot. */
-export function roundData(competition: Competition, round: Round, revision: Revision, editorVersion: string): RoundData {
+export function roundData(
+  competition: Competition,
+  round: Round,
+  revision: Pick<Revision, "stamp">,
+  editorVersion: string,
+): RoundData {
   if (!round.reference) throw new Error(`${round.name} has no Reference`);
   return {
     competitionName: competition.name,
@@ -142,4 +249,67 @@ export function roundData(competition: Competition, round: Round, revision: Revi
     reference: round.reference.dataUri,
     assets: round.assets.map(({ name, width, height, dataUri }) => ({ name, width, height, dataUri })),
   };
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+const isAsset = (value: unknown): value is Asset =>
+  isRecord(value) &&
+  typeof value.name === "string" &&
+  typeof value.dataUri === "string" &&
+  value.dataUri.startsWith("data:") &&
+  (typeof value.width === "number" || value.width === null) &&
+  (typeof value.height === "number" || value.height === null);
+
+const isRevision = (value: unknown): value is Revision =>
+  isRecord(value) &&
+  typeof value.n === "number" &&
+  typeof value.stamp === "string" &&
+  typeof value.fingerprint === "string";
+
+const isRound = (value: unknown): value is Round =>
+  isRecord(value) &&
+  typeof value.id === "string" &&
+  (value.kind === "heat" || value.kind === "final") &&
+  typeof value.name === "string" &&
+  (value.reference === null || isAsset(value.reference)) &&
+  Array.isArray(value.assets) &&
+  value.assets.every(isAsset) &&
+  Array.isArray(value.revisions) &&
+  value.revisions.every(isRevision);
+
+/** A Competition read back from this browser or a Competition file, or null if it isn't one. */
+export function parseCompetition(value: unknown): Competition | null {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    !(value.rules === undefined || typeof value.rules === "string") ||
+    !Array.isArray(value.rounds) ||
+    !value.rounds.every(isRound)
+  ) {
+    return null;
+  }
+  // Defaults first, so a Competition saved before a setting existed still opens.
+  return { ...newCompetition(), ...value } as Competition;
+}
+
+/** Nothing would be lost by replacing it: it's just as a new Competition starts. */
+export const isUntouched = (competition: Competition) =>
+  !competition.rounds.length && JSON.stringify(competition) === JSON.stringify(newCompetition());
+
+const FILE_FORMAT = "citd-competition";
+
+/** The Competition file: everything in the Competition, so it opens again exactly as it was. */
+export const competitionFile = (competition: Competition) =>
+  JSON.stringify({ format: FILE_FORMAT, formatVersion: 1, competition });
+
+/** The Competition in a Competition file, or null if the text isn't one. */
+export function parseCompetitionFile(text: string): Competition | null {
+  let file: unknown;
+  try {
+    file = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return isRecord(file) && file.format === FILE_FORMAT ? parseCompetition(file.competition) : null;
 }

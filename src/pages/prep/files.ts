@@ -1,5 +1,5 @@
 // The browser side of the prep page: reading the Organizer's files, fetching the Core Editor
-// template and handing a Round package to the browser's downloads.
+// template and handing Round packages and Competition files to the browser's downloads.
 
 import type { Asset } from "./competition.ts";
 
@@ -32,9 +32,9 @@ export async function fetchTemplate(): Promise<string> {
   return response.text();
 }
 
-export function download(fileName: string, html: string): void {
+export function download(fileName: string, content: string, type = "text/html"): void {
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  link.href = URL.createObjectURL(new Blob([content], { type }));
   link.download = fileName;
   document.body.append(link);
   link.click();
