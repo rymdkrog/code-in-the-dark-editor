@@ -14,6 +14,7 @@ test("the smoke test claims a throwaway Competition with Origin: null and round-
   expect(passed).toEqual([
     "a Host socket with Origin: null claimed a throwaway Competition",
     "a second Host socket read the claim back",
+    "a Contestant socket with Origin: null reached the Roster",
     "every role's socket answered a ping",
   ]);
 });

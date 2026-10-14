@@ -42,7 +42,9 @@ function contentSecurityPolicy(round: RoundData): string {
 
 const SOCKET_SCHEMES: Record<string, string> = { "https:": "wss:", "wss:": "wss:", "http:": "ws:", "ws:": "ws:" };
 
-function socketOrigin(workerUrl: string): string {
+/** The origin of the Worker's sockets, e.g. `wss://citd.example.workers.dev`. Throws on a URL
+ * that can't be one. */
+export function socketOrigin(workerUrl: string): string {
   const url = URL.canParse(workerUrl) ? new URL(workerUrl) : undefined;
   const scheme = url && SOCKET_SCHEMES[url.protocol];
   if (!url || !scheme) throw new Error(`Not a usable Worker URL: ${workerUrl}`);

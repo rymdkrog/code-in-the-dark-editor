@@ -286,8 +286,9 @@ test("every key the editor stores is under the Round id, and other keys are left
 
   await expect.poll(() => indexedDBKeys(page)).toEqual([`${roundId}:code`]);
   const keys = await page.evaluate(() => Object.keys(localStorage));
-  expect(keys.filter((key) => !["someone-else", "other-round:code", "citd:name"].includes(key))).toEqual([
+  expect(keys.filter((key) => !["someone-else", "other-round:code", "citd:name"].includes(key)).sort()).toEqual([
     `${roundId}:code`,
+    `${roundId}:seat`,
   ]);
   expect(await page.evaluate(() => localStorage.getItem("someone-else"))).toBe("theirs");
   expect(await page.evaluate(() => localStorage.getItem("other-round:code"))).toBe("other Round's code");

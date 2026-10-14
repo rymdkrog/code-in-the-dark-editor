@@ -1,3 +1,4 @@
+import { NAME_CHANGED } from "../round-package/events.ts";
 import type { RoundData } from "../round-package/round-data.ts";
 
 // The one key that isn't Round-prefixed: the name belongs to the laptop, so it carries from
@@ -16,6 +17,7 @@ export function startNameBadge(round: RoundData, editor: { focus(): void }) {
     name = newName;
     badge.textContent = `${newName} · ${round.roundName}`;
     badge.hidden = false;
+    window.dispatchEvent(new CustomEvent(NAME_CHANGED, { detail: newName }));
   };
 
   // The form won't submit while the name is invalid, and the browser says why.

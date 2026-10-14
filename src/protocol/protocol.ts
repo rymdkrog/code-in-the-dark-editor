@@ -7,6 +7,12 @@ export const V = 1;
 /** The Worker closes a socket whose message carries a `v` it doesn't accept. Clients stop reconnecting. */
 export const CLOSE_VERSION = 4001;
 
+/** The Worker closes a Contestant socket whose presence comes before the claim. Clients retry,
+ * so a laptop opened early appears once the Host claims. */
+export const CLOSE_UNCLAIMED = 4002;
+/** The Worker closes a Contestant socket whose presence lacks the Competition's Contestant token. */
+export const CLOSE_TOKEN = 4003;
+
 /** The app-level heartbeat. The Durable Object answers it without waking (`setWebSocketAutoResponse`). */
 export const PING = JSON.stringify({ v: V, t: "ping" });
 export const PONG = JSON.stringify({ v: V, t: "pong" });
@@ -113,9 +119,23 @@ export type HostMessage =
   | { v: number; t: "claim"; organizerKey: string; claim: Claim }
   | ({ v: number } & LifecycleCommand);
 
+/** What a Contestant's laptop says about itself: everything the Roster knows of it. */
+export interface Presence {
+  /** The Round id in the laptop's Round package. */
+  roundId: string;
+  /** Random, minted once per laptop per Round. */
+  seat: string;
+  name: string;
+  revision: string;
+}
+
+/** The Enhancement's only message. Sent on every connect and whenever the name changes. */
+export type ContestantMessage = { v: number; t: "presence"; token: string } & Presence;
+
 /** Anything a client may send. */
 export type ClientMessage =
   | HostMessage
+  | ContestantMessage
   /** Sent by the Stage and Audience phones on every connect: they follow the Current Round, read-only. */
   | { v: number; t: "follow" }
   | { v: number; t: "ping" };
@@ -134,12 +154,50 @@ export interface PublicSnapshot {
   roster: PublicEntry[];
 }
 
+/** One laptop on a Round's Roster. It stays listed for the rest of the Round once it appears. */
+export interface RosterEntry {
+  seat: string;
+  name: string;
+  revision: string;
+  /** Whether the laptop is connected now. */
+  online: boolean;
+}
+
+export interface Roster {
+  /** In the order they first appeared. */
+  entries: RosterEntry[];
+  /** The newest Revision seen for the Round, or null before anyone appears. */
+  newest: string | null;
+}
+
+/** The counter in a Revision: 3 for `3-202610121403`. */
+export const revisionNumber = (revision: string) => Number(/^\d+/.exec(revision)?.[0] ?? 0);
+
+/** Whether Revision `a` is newer than `b`: a later counter, or the same counter exported later. */
+export function isNewerRevision(a: string, b: string): boolean {
+  const [na, nb] = [revisionNumber(a), revisionNumber(b)];
+  return na !== nb ? na > nb : a > b;
+}
+
+/** "Stale" means older than the newest Revision seen for that Round. */
+export const isStale = (entry: RosterEntry, roster: Roster) =>
+  roster.newest !== null && isNewerRevision(roster.newest, entry.revision);
+
 export type ServerMessage =
   | { v: number; t: "pong" }
   /** The Competition hasn't been claimed yet. */
   | { v: number; t: "unclaimed" }
-  /** The Host is in: the snapshot of the Competition, sent on every connect. */
-  | { v: number; t: "competition"; competition: CompetitionSummary; lifecycle: Lifecycle }
+  /** The Host is in: the snapshot of the Competition, sent on every connect. Every Round's
+   * Roster, keyed by Round id. */
+  | {
+      v: number;
+      t: "competition";
+      competition: CompetitionSummary;
+      lifecycle: Lifecycle;
+      rosters: Record<string, Roster>;
+    }
+  /** A Round's Roster changed. Sent to every Host. */
+  | { v: number; t: "roster"; roundId: string; roster: Roster }
   /** The Stage's and phones' snapshot. Sent when they follow, and again on every change. */
   | ({ v: number; t: "public" } & PublicSnapshot)
   /** The lifecycle changed. Sent to every Host. */

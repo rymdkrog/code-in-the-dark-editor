@@ -9,6 +9,7 @@ import {
   type CompetitionSummary,
   type Lifecycle,
   type LifecycleCommand,
+  type Roster,
   type ServerMessage,
 } from "../../protocol/protocol.ts";
 import { sameOriginSocket } from "../links.ts";
@@ -20,7 +21,7 @@ type Standing =
   | { kind: "unknown" }
   | { kind: "unclaimed" }
   | { kind: "refused" }
-  | { kind: "claimed"; competition: CompetitionSummary; lifecycle: Lifecycle };
+  | { kind: "claimed"; competition: CompetitionSummary; lifecycle: Lifecycle; rosters: Record<string, Roster> };
 
 const REFUSALS: Record<ClaimRefusal, string> = {
   "organizer-key": "That Organizer key is wrong.",
@@ -64,11 +65,17 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
             return setStanding({ kind: "unclaimed" });
           case "host-refused":
             return setStanding({ kind: "refused" });
-          case "competition":
+          case "competition": {
             setRefusal(null);
-            return setStanding({ kind: "claimed", competition: message.competition, lifecycle: message.lifecycle });
+            const { competition, lifecycle, rosters } = message;
+            return setStanding({ kind: "claimed", competition, lifecycle, rosters });
+          }
           case "lifecycle":
             return setStanding((was) => (was.kind === "claimed" ? { ...was, lifecycle: message.lifecycle } : was));
+          case "roster":
+            return setStanding((was) =>
+              was.kind === "claimed" ? { ...was, rosters: { ...was.rosters, [message.roundId]: message.roster } } : was,
+            );
           case "claim-refused":
             return setRefusal(REFUSALS[message.reason] ?? REFUSALS.invalid);
         }
@@ -104,6 +111,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
         <ControlDesk
           competition={standing.competition}
           lifecycle={standing.lifecycle}
+          rosters={standing.rosters}
           online={online}
           send={sendCommand}
         />

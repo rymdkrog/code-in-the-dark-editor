@@ -1,6 +1,6 @@
-// The Control desk (Host variant A of the Stage/Host prototype): a rail of Rounds, and the
-// Current Round's lifecycle with its clock and controls. The Worker owns the lifecycle; this
-// only sends commands, and sends none while offline.
+// The Control desk (Host variant A of the Stage/Host prototype): a rail of Rounds with each
+// one's Roster status, and the Current Round's lifecycle with its clock, controls and Roster.
+// The Worker owns the lifecycle; this only sends commands, and sends none while offline.
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
@@ -10,9 +10,11 @@ import {
   type Lifecycle,
   type LifecycleCommand,
   type Phase,
+  type Roster,
 } from "../../protocol/protocol.ts";
 import { stageLink } from "../links.ts";
 import { CopyButton, formatClock, PHASE_LABELS, PhaseChip, RoundClock, VersionFooter } from "../shared.tsx";
+import { rosterStatus, RosterTable } from "./RosterTable.tsx";
 
 /** The phases a Round can't be switched away from without asking, and what switching costs. */
 const SWITCHING_COSTS: Partial<Record<Phase, string>> = {
@@ -32,12 +34,14 @@ const HINTS: Record<Phase, string> = {
 interface Props {
   competition: CompetitionSummary;
   lifecycle: Lifecycle;
+  /** Every Round's Roster, by Round id. */
+  rosters: Record<string, Roster>;
   online: boolean;
   /** Sends now, or drops the command and returns false. */
   send(command: LifecycleCommand): boolean;
 }
 
-export function ControlDesk({ competition, lifecycle, online, send }: Props) {
+export function ControlDesk({ competition, lifecycle, rosters, online, send }: Props) {
   const [confirm, confirmation] = useConfirm(online, lifecycle);
   const roundName = (id: string | null) =>
     competition.rounds.find((round) => round.id === id)?.name ?? "the welcome screen";
@@ -114,6 +118,7 @@ export function ControlDesk({ competition, lifecycle, online, send }: Props) {
                 <span>
                   <b>{round.name}</b> {on && lifecycle.phase && <PhaseChip phase={lifecycle.phase} />}
                 </span>
+                <small>{rosterStatus(rosters[round.id])}</small>
               </button>
             );
           })}
@@ -146,6 +151,7 @@ export function ControlDesk({ competition, lifecycle, online, send }: Props) {
                 </div>
                 <p className="hint">{HINTS[lifecycle.phase]}</p>
               </div>
+              <RosterTable roundName={current!} roster={rosters[lifecycle.current!]} />
             </>
           )}
         </main>

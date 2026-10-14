@@ -41,7 +41,7 @@ jobs:
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Build the template and citd-practice.html
         run: npm run build
-      - name: No-network gate, recovery suite, prep page and the live Host console flow
+      - name: No-network gate, recovery and chaos suites, prep page and the live Host console flow
         # A trace of each failure goes in the report. Not in the input-lag budget, which it would slow.
         run: npx playwright test --project ${{ matrix.browser }} --trace retain-on-failure
       - uses: actions/upload-artifact@v4

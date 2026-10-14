@@ -78,6 +78,17 @@ main { padding: 18px 22px 100px; display: grid; gap: 16px; align-content: start;
 .dur input { width: 64px; background: #111216; border: 1px solid #ffffff22; border-radius: 8px; padding: 6px 8px; text-align: right; }
 .dur input:disabled { opacity: .35; }
 .offline .top button { pointer-events: none; opacity: .35; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Roster */
+.roster-section h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; display: flex; gap: 10px; align-items: baseline; }
+.roster-section h2 .status { text-transform: none; letter-spacing: 0; font-weight: 400; }
+table.roster { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+table.roster td, table.roster th { padding: 8px 12px; border-top: 1px solid var(--line); text-align: left; vertical-align: middle; }
+table.roster th { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-top: 0; }
+table.roster td.connection { width: 1%; }
+table.roster tr.off td.name { color: #777; }
+.chip.stale { background: #5c3a0c; color: #ffd08a; }
 
 dialog { background: #23242b; color: var(--text); border: 1px solid #ffffff22; border-radius: 12px; padding: 18px 20px; width: min(440px, 92vw); box-shadow: 0 20px 60px #000c; }
 dialog::backdrop { background: #0008; }

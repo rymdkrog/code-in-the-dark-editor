@@ -5,10 +5,14 @@
 import { CLOSE_VERSION, PING, PONG } from "../protocol/protocol.ts";
 
 const PING_EVERY = 25_000;
-/** Silence this long means a half-open socket (a Wi-Fi change, say): drop it and reconnect. */
+/** Silence this long means a half-open socket (a Wi-Fi change, say), or a handshake that hangs:
+ * drop it and reconnect. */
 const SILENCE = 60_000;
 const FIRST_DELAY = 1_000;
 const MAX_DELAY = 30_000;
+/** A socket that stayed open this long was a real connection, so the backoff starts over. One
+ * that closes sooner (refused presence, a server that closes at once) keeps backing off. */
+const STABLE = 10_000;
 
 export interface SocketHandlers {
   /** Connected, after the first connect and after every reconnect. */
@@ -30,6 +34,7 @@ export function connectSocket(url: string, on: SocketHandlers): Socket {
   let socket: WebSocket | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let heard = 0;
+  let openedAt: number | undefined;
   let delay = FIRST_DELAY;
   let stopped = false;
 
@@ -46,14 +51,11 @@ export function connectSocket(url: string, on: SocketHandlers): Socket {
       if (stopped || socket) return;
       if (navigator.onLine === false) return addEventListener("online", open, { once: true });
       const ws = (socket = new WebSocket(url));
+      heard = Date.now();
+      openedAt = undefined;
+      heartbeat = setInterval(beat, PING_EVERY);
       ws.onopen = () => {
-        try {
-          delay = FIRST_DELAY;
-          heard = Date.now();
-          heartbeat = setInterval(beat, PING_EVERY);
-        } catch {
-          // Nothing above throws in practice; the rule is that no entry point can.
-        }
+        openedAt = heard = Date.now();
         call(on.open, undefined);
       };
       ws.onmessage = (event) => {
@@ -80,7 +82,7 @@ export function connectSocket(url: string, on: SocketHandlers): Socket {
   function beat() {
     try {
       if (Date.now() - heard > SILENCE) drop(socket);
-      else socket?.send(PING);
+      else if (socket?.readyState === WebSocket.OPEN) socket.send(PING);
     } catch {
       drop(socket);
     }
@@ -92,6 +94,7 @@ export function connectSocket(url: string, on: SocketHandlers): Socket {
       if (!ws || ws !== socket) return;
       clearInterval(heartbeat);
       socket = undefined;
+      if (openedAt !== undefined && Date.now() - openedAt >= STABLE) delay = FIRST_DELAY;
       ws.onopen = ws.onmessage = ws.onclose = null;
       ws.close();
     } catch {

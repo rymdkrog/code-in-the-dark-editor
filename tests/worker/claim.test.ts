@@ -26,10 +26,12 @@ test("a claim with the Organizer key binds the Join code to the Host secret", as
   host.send({ t: "claim", organizerKey: ORGANIZER_KEY, claim });
 
   const competition = { name: "Gothenburg 2026", joinCode: claim.joinCode, rounds: claim.rounds };
-  expect(await host.next()).toEqual({ v: 1, t: "competition", competition, lifecycle: welcome });
+  const empty = { entries: [], newest: null };
+  const rosters = { heat1aaaaa: empty, heat2aaaaa: empty, finalaaaaa: empty };
+  expect(await host.next()).toEqual({ v: 1, t: "competition", competition, lifecycle: welcome, rosters });
   const later = await connect(worker, claim.joinCode, "host");
   later.send({ t: "host", hostSecret: claim.hostSecret });
-  expect(await later.next()).toEqual({ v: 1, t: "competition", competition, lifecycle: welcome });
+  expect(await later.next()).toEqual({ v: 1, t: "competition", competition, lifecycle: welcome, rosters });
 });
 
 test("a second claim with a different Host secret fails, even with the Organizer key", async () => {

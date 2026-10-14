@@ -4,7 +4,7 @@
 //   WORKER_URL=https://… ORGANIZER_KEY=… npm run smoke
 //
 // It claims a throwaway Competition under a random Join code and new secrets, so it can't touch
-// a real one. Presence joins the round trip once Contestants send it (#34).
+// a real one.
 
 import { fileURLToPath } from "node:url";
 import { mintCredentials } from "../../src/pages/prep/competition.ts";
@@ -31,6 +31,13 @@ export async function smoke(workerUrl: string, organizerKey: string): Promise<st
     later.send({ t: "host", hostSecret: claim.hostSecret });
     expectMessage(await later.next(), "competition", "reading the claim back");
     passed.push("a second Host socket read the claim back");
+
+    const laptop = await open("contestant");
+    const [round] = claim.rounds;
+    const presence = { roundId: round!.id, seat: "smoke-seat", name: "Smoke test", revision: "1-202601010000" };
+    laptop.send({ t: "presence", token: claim.contestantToken, ...presence });
+    expectMessage(await later.next(), "roster", "registering a Contestant's presence");
+    passed.push("a Contestant socket with Origin: null reached the Roster");
 
     for (const role of ROLES) {
       const socket = await open(role);

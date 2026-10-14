@@ -9,6 +9,7 @@ import { setUpReference } from "./reference.ts";
 import { startParticles } from "./particles.ts";
 import { setUpReveal } from "./reveal.ts";
 import { readRound } from "./round.ts";
+import { publishSeat } from "./seat.ts";
 import { startShake } from "./shake.ts";
 import { claimRound, showOpenElsewhere } from "./tab-guard.ts";
 
@@ -34,6 +35,7 @@ if (!round) {
     event.preventDefault();
     event.returnValue = "Hold your horses!";
   });
+  publishSeat(round.roundId);
   const nameBadge = startNameBadge(round, editor);
   const menu = setUpMenu(round, editor, { contestantName: nameBadge.name });
   // The way to a backup when autosave fails.

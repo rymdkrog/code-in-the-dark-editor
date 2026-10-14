@@ -6,11 +6,11 @@
 //
 // It fails open: without Web Locks, or when they don't answer, the tab carries on as the only one.
 
+import { TWO_TAB_BLOCKED } from "../round-package/events.ts";
+
 // Browsers answer within a few milliseconds. The editor waits for the answer, so this caps how
 // long a browser whose Web Locks hang keeps the Contestant from typing.
 const ANSWER_WITHIN_MS = 1000;
-// Published on `window` whether or not anyone listens: a blocked tab doesn't connect either.
-const TWO_TAB_BLOCKED = "citd:two-tab-blocked";
 
 /** Whether this tab has the Round to itself. Once it has, it keeps the Round until it goes. */
 export function claimRound(roundId: string): Promise<boolean> {
@@ -39,5 +39,6 @@ export function showOpenElsewhere() {
   // Chromium closes a modal dialog on a second Esc even when the first was refused.
   dialog.addEventListener("close", () => dialog.showModal());
   dialog.showModal();
+  // A blocked tab doesn't connect either.
   window.dispatchEvent(new CustomEvent(TWO_TAB_BLOCKED));
 }
