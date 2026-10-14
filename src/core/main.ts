@@ -16,17 +16,16 @@ const round = readRound();
 
 if (!round) {
   document.querySelector<HTMLElement>(".bare-template")!.hidden = false;
-  document.querySelector<HTMLElement>(".streak-container")!.hidden = true;
 } else if (!(await claimRound(round.roundId))) {
   // Before anything starts, so this tab never restores, saves or asks for the name.
   showOpenElsewhere();
-  document.querySelector<HTMLElement>(".streak-container")!.hidden = true;
 } else {
   const editorElement = document.getElementById("editor")!;
   const editor = startEditor(editorElement);
   const reference = setUpReference(round.reference, editor);
   const instructions = setUpInstructions(round, editor);
   document.querySelector<HTMLElement>(".button-bar")!.hidden = false;
+  document.querySelector<HTMLElement>(".streak-container")!.hidden = false;
 
   const storageFailing = document.querySelector<HTMLElement>(".storage-failing")!;
   startAutosave(editor, round.roundId, (working) => (storageFailing.hidden = working));

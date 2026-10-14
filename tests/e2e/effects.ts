@@ -79,7 +79,8 @@ export async function recordEffects(
           for (const style of styles) {
             parse.setAttribute("style", style ?? "");
             const { transform, margin } = parse.style;
-            // The editor starts after this, and ACE's own styles aren't a shake.
+            // The editor starts once the two-tab guard has answered, after this; ACE's own
+            // style writes then land here too, and they aren't a shake.
             if (transform === last.transform && margin === last.margin) continue;
             last = { transform, margin };
             recording.styleChanges.push({ time: performance.now(), transform, margin });

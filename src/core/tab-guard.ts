@@ -6,6 +6,8 @@
 //
 // It fails open: without Web Locks, or when they don't answer, the tab carries on as the only one.
 
+// Browsers answer within a few milliseconds. The editor waits for the answer, so this caps how
+// long a browser whose Web Locks hang keeps the Contestant from typing.
 const ANSWER_WITHIN_MS = 1000;
 // Published on `window` whether or not anyone listens: a blocked tab doesn't connect either.
 const TWO_TAB_BLOCKED = "citd:two-tab-blocked";

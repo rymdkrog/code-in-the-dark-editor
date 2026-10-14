@@ -295,14 +295,46 @@ test("every key the editor stores is under the Round id, and other keys are left
 
 const OPEN_ELSEWHERE = "This Round is open in another tab";
 
+/**
+ * Opens the practice Round in a second tab while it's open in another, recording every write
+ * the second tab makes to localStorage or IndexedDB.
+ */
+async function openSecondTab(context: BrowserContext) {
+  const second = await context.newPage();
+  await second.addInitScript(() => {
+    const writes: string[] = [];
+    (window as unknown as { writes: string[] }).writes = writes;
+    const { setItem, removeItem } = Storage.prototype;
+    Storage.prototype.setItem = function (key, value) {
+      writes.push(`localStorage ${key}`);
+      setItem.call(this, key, value);
+    };
+    Storage.prototype.removeItem = function (key) {
+      writes.push(`localStorage ${key}`);
+      removeItem.call(this, key);
+    };
+    const { put } = IDBObjectStore.prototype;
+    IDBObjectStore.prototype.put = function (value, key) {
+      writes.push(`IndexedDB ${String(key)}`);
+      return put.call(this, value, key);
+    };
+  });
+  await second.goto(pathToFileURL(PRACTICE).href);
+  await expect(second.getByRole("dialog")).toContainText(OPEN_ELSEWHERE);
+  return second;
+}
+
+const writesIn = (page: Page) => page.evaluate(() => (window as unknown as { writes: string[] }).writes);
+
 test("a second tab of the same Round is blocked and never saves", async ({ browserName, context, page }) => {
   await openPackage(page);
   await page.keyboard.type("one");
-  const second = await context.newPage();
-  await second.goto(pathToFileURL(PRACTICE).href);
 
-  await expect(second.getByRole("dialog")).toContainText(OPEN_ELSEWHERE);
+  const second = await openSecondTab(context);
   await second.keyboard.type("stale");
+  // Past the 300 ms save.
+  await second.waitForTimeout(400);
+  expect(await writesIn(second)).toEqual([]);
   await page.keyboard.type(" two");
   // The first tab saves last as it closes; a write from the second tab after that would win.
   await closeTab(page, browserName);
@@ -341,9 +373,7 @@ test("leaving the page asks first", async ({ page }) => {
 
 test("a blocked tab lets you leave without asking", async ({ context, page }) => {
   await openPackage(page);
-  const second = await context.newPage();
-  await second.goto(pathToFileURL(PRACTICE).href);
-  await expect(second.getByRole("dialog")).toContainText(OPEN_ELSEWHERE);
+  const second = await openSecondTab(context);
   // Browsers only ask on a page the person has used.
   await second.keyboard.type("x");
 
