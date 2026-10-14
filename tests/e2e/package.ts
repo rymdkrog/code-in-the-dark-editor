@@ -54,6 +54,12 @@ export const nextFrame = (page: Page) =>
 export const editorText = (page: Page) =>
   page.evaluate(() => (document.querySelector("#editor") as unknown as EditorElement).env.editor.getValue());
 
+/** Puts `code` in the editor in one go, without ACE's auto-closing. */
+export const setEditorText = (page: Page, code: string) =>
+  page.evaluate((code) => {
+    (document.querySelector("#editor") as unknown as EditorElement).env.editor.setValue(code, 1);
+  }, code);
+
 /** The editor's text with `|` at the caret. */
 export const editorTextWithCaret = (page: Page) =>
   page.evaluate(() => {
@@ -65,5 +71,11 @@ export const editorTextWithCaret = (page: Page) =>
   });
 
 interface EditorElement {
-  env: { editor: { getValue(): string; getCursorPosition(): { row: number; column: number } } };
+  env: {
+    editor: {
+      getValue(): string;
+      setValue(value: string, cursor: number): void;
+      getCursorPosition(): { row: number; column: number };
+    };
+  };
 }

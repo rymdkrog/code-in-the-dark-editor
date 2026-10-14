@@ -1,19 +1,10 @@
 import { readFileSync } from "node:fs";
 import { expect, type Page } from "@playwright/test";
-import { editorText, nextFrame, openPackage, test } from "./package.ts";
+import { editorText, nextFrame, openPackage, setEditorText, test } from "./package.ts";
 
 // References the practice Round's one asset every way a Contestant might, plus a script and
 // an external font and stylesheets, which must neither run nor load.
 const CONTESTANT_CODE = readFileSync(new URL("../../fixtures/reveal/contestant.html", import.meta.url), "utf8");
-
-/** Puts `code` in the editor in one go, without ACE's auto-closing. */
-const setCode = (page: Page, code: string) =>
-  page.evaluate((code) => {
-    const element = document.querySelector("#editor") as unknown as {
-      env: { editor: { setValue(value: string, cursor: number): void } };
-    };
-    element.env.editor.setValue(code, 1);
-  }, code);
 
 /** Counts the Reveal events the Core publishes from now on. */
 const recordRevealEvents = (page: Page) =>
@@ -44,7 +35,7 @@ test("the Reveal renders the code with the Round's assets, and no JavaScript or 
   page,
 }) => {
   await openPackage(page);
-  await setCode(page, CONTESTANT_CODE);
+  await setEditorText(page, CONTESTANT_CODE);
 
   await reveal(page);
 
@@ -71,10 +62,18 @@ test("the Reveal renders the code with the Round's assets, and no JavaScript or 
         await document.fonts.ready;
         return [...document.fonts].map((font) => `${font.family}: ${font.status}`);
       });
-  expect((await fontStatuses()).filter((status) => status.endsWith("loaded") && !status.endsWith("unloaded"))).toEqual(
-    [],
-  );
+  expect(await fontStatuses()).not.toContainEqual(expect.stringMatching(/: loaded$/));
   await expect(result(page).locator("body")).toHaveCSS("font-family", /Remote/);
+});
+
+test("the result renders in standards mode with or without a doctype, as in the original", async ({ page }) => {
+  await openPackage(page);
+  await setEditorText(page, "<p>No doctype</p>");
+
+  await reveal(page);
+
+  await expect(result(page).locator("p")).toHaveText("No doctype");
+  expect(await result(page).locator("p").evaluate(() => document.compatMode)).toBe("CSS1Compat");
 });
 
 test('the Reveal asks for "yes" first, and Cancel or Esc go back to the editor', async ({ page }) => {

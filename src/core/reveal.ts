@@ -3,8 +3,8 @@ import type { RoundData } from "../round-package/round-data.ts";
 import { rewriteAssets } from "./reveal-assets.ts";
 
 // Published on `window` whether or not anyone listens. The Enhancement only ever listens.
-export const REVEAL_STARTED = "citd:reveal-started";
-export const REVEAL_ENDED = "citd:reveal-ended";
+const REVEAL_STARTED = "citd:reveal-started";
+const REVEAL_ENDED = "citd:reveal-ended";
 
 /**
  * The Reveal button, the dialog that asks for "yes", and the frame the result renders in. The
@@ -43,7 +43,8 @@ export function setUpReveal(round: RoundData, editor: Ace.Editor, { onStart }: {
     result.title = "Result";
     // Before it has a document: no allow-scripts, so no Contestant JavaScript runs.
     result.setAttribute("sandbox", "");
-    result.srcdoc = rewriteAssets(editor.getValue(), round.assets);
+    // Standards mode with or without the Contestant's doctype, as the original's result page was.
+    result.srcdoc = `<!doctype html>${rewriteAssets(editor.getValue(), round.assets)}`;
     document.body.append(result);
     document.body.classList.add("revealing");
     onStart();

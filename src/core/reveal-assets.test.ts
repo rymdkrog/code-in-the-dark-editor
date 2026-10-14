@@ -70,6 +70,12 @@ describe("rewriteAssets", () => {
     expect(rewriteAssets(html, assets)).toBe(html);
   });
 
+  it("still rewrites the url() after an @import that has no semicolon", () => {
+    expect(rewriteAssets("<style>/* no @import */ p { background: url(beach.jpg) }</style>", assets)).toBe(
+      `<style>/* no @import */ p { background: url("${BEACH}") }</style>`,
+    );
+  });
+
   it("leaves url() outside CSS alone", () => {
     const html = '<p>url(beach.jpg)</p><script>x = "url(beach.jpg)"</script>';
     expect(rewriteAssets(html, assets)).toBe(html);

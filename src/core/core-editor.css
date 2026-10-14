@@ -232,7 +232,7 @@ button:focus {
   bottom: 20px;
 }
 
-/* As in the original, Reveal (its Finish) is on the right. */
+/* As in the original, Reveal is on the right, where its Finish button was. */
 .button-bar button {
   float: right;
 }
@@ -375,6 +375,7 @@ button:focus {
   opacity: 0.8;
 }
 
+/* Every dialog: the name and the Reveal. */
 dialog {
   max-width: 40em;
   padding: 30px;
@@ -436,7 +437,8 @@ dialog button + button {
   background: white;
 }
 
-/* During the Reveal only the result and the name badge show, and any dialog opened from it. */
+/* During the Reveal only the result and the name badge show, and any dialog opened from it.
+   Reactions, when they come, join this list. */
 body.revealing > :not(.result, .name-badge, dialog) {
   display: none;
 }
