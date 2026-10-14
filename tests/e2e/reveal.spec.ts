@@ -130,6 +130,7 @@ test("during the Reveal only the result and the name badge show, without Power M
     ".streak-container",
     ".exclamations",
     ".power-mode-indicator",
+    ".canvas-overlay",
     ".background",
     ".button-bar",
   ]) {
@@ -157,12 +158,27 @@ test("the name badge still edits the name during the Reveal", async ({ page }) =
   await expect(resultFrame(page)).toBeVisible();
 });
 
-test("nothing is kept: a reload ends the Reveal, back to the editor, and revealing again needs yes", async ({
+test("the storage icon is hidden during the Reveal", async ({ page }) => {
+  // Every localStorage write throws, as on a full disk.
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    };
+  });
+  await openPackage(page);
+  const storageFailing = page.getByTitle("Autosave isn't working — download a backup");
+  await expect(storageFailing).toBeVisible();
+
+  await reveal(page);
+
+  await expect(storageFailing).toBeHidden();
+});
+
+test("nothing is kept: a reload ends the Reveal, back to the editor with the code, and revealing again needs yes", async ({
   page,
 }) => {
   await openPackage(page);
   await page.keyboard.type("<h1>");
-  await recordRevealEvents(page);
   await reveal(page);
   // Leaving publishes the Reveal's end.
   await page.evaluate(() =>
@@ -174,10 +190,11 @@ test("nothing is kept: a reload ends the Reveal, back to the editor, and reveali
   expect(await page.evaluate(() => localStorage.getItem("test:reveal-ended"))).toBe("yes");
   await expect(resultFrame(page)).toBeHidden();
   await expect(page.locator(".reference")).toBeVisible();
+  expect(await editorText(page)).toBe("<h1></h1>");
   await expect(page.locator("#editor textarea")).toBeFocused();
   await nextFrame(page);
   await page.keyboard.type("x");
-  await expect.poll(() => editorText(page)).toContain("x");
+  await expect.poll(() => editorText(page)).toBe("x<h1></h1>");
 
   await revealButton(page).click();
   await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("");
