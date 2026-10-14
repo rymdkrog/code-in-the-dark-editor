@@ -7,15 +7,8 @@
 // a real one. Presence joins the round trip once Contestants send it (#34).
 
 import { fileURLToPath } from "node:url";
-import {
-  base64url,
-  JOIN_CODE_ALPHABET,
-  JOIN_CODE_LENGTH,
-  PING,
-  ROLES,
-  type Claim,
-  type ServerMessage,
-} from "../../src/protocol/protocol.ts";
+import { mintCredentials } from "../../src/pages/prep/competition.ts";
+import { PING, ROLES, type Claim, type Role, type ServerMessage } from "../../src/protocol/protocol.ts";
 import { openSocket, type TestSocket } from "./client.ts";
 
 /** Runs every check against the Worker at `workerUrl` and returns what passed; throws on the first failure. */
@@ -23,7 +16,7 @@ export async function smoke(workerUrl: string, organizerKey: string): Promise<st
   const claim = throwawayClaim();
   const passed: string[] = [];
   const sockets: TestSocket[] = [];
-  const open = async (role: (typeof ROLES)[number]) => {
+  const open = async (role: Role) => {
     const socket = await openSocket(workerUrl, claim.joinCode, role, { Origin: "null" });
     sockets.push(socket);
     return socket;
@@ -55,21 +48,15 @@ function expectMessage(message: ServerMessage, t: ServerMessage["t"], step: stri
   if (message.t !== t) throw new Error(`${step}: expected "${t}", got ${JSON.stringify(message)}`);
 }
 
-function throwawayClaim(): Claim {
-  const random = (length: number) => crypto.getRandomValues(new Uint8Array(length));
-  const joinCode = Array.from(random(JOIN_CODE_LENGTH), (byte) => JOIN_CODE_ALPHABET[byte % JOIN_CODE_ALPHABET.length])
-    .join("");
-  return {
-    competitionName: `Smoke test ${new Date().toISOString()}`,
-    joinCode,
-    hostSecret: base64url(random(32)),
-    contestantToken: base64url(random(32)),
-    rounds: [{ id: "smoketest0", name: "Smoke test" }],
-  };
-}
+/** A Competition nobody else holds, minted the way the prep page mints one. */
+const throwawayClaim = (): Claim => ({
+  competitionName: `Smoke test ${new Date().toISOString()}`,
+  ...mintCredentials(),
+  rounds: [{ id: "smoketest0", name: "Smoke test" }],
+});
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const workerUrl = process.argv[2] ?? process.env.WORKER_URL;
+  const workerUrl = process.env.WORKER_URL;
   const organizerKey = process.env.ORGANIZER_KEY;
   if (!workerUrl || !organizerKey) {
     console.error("Usage: WORKER_URL=https://… ORGANIZER_KEY=… npm run smoke");

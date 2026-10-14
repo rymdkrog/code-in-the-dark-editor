@@ -62,7 +62,7 @@ Double-click `dist/citd-practice.html` to try the editor. `scripts/make-practice
 
 ## Run your own Audience layer
 
-The Audience layer (the Host console, the Stage and the Audience phone page) runs on a Cloudflare Worker. Access control is running your own: anyone who wants it deploys their own Worker.
+The Audience layer (the Host console, the Stage and the Audience phone page) runs on a Cloudflare Worker. There's no sign-up: anyone who wants the Audience layer deploys their own Worker.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rymdkrog/code-in-the-dark-editor)
 
