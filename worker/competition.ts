@@ -15,7 +15,6 @@ import {
   type CompetitionSummary,
   type Lifecycle,
   type LifecycleCommand,
-  type PublicEntry,
   type Role,
   type ServerMessage,
 } from "../src/protocol/protocol.ts";
@@ -120,7 +119,7 @@ export class Competition extends DurableObject<Env> {
     socket.serializeAttachment({ ...(socket.deserializeAttachment() as Attachment), follows: true } satisfies Attachment);
     const claim = await this.ctx.storage.get<Claim>("claim");
     if (!claim) return send(socket, { v: V, t: "unclaimed" });
-    send(socket, await this.publicState(claim));
+    send(socket, await this.publicSnapshot(claim));
   }
 
   private async command(socket: WebSocket, command: LifecycleCommand) {
@@ -153,23 +152,20 @@ export class Competition extends DurableObject<Env> {
   private async tellFollowers(claim: Claim) {
     const followers = this.ctx.getWebSockets().filter(follows);
     if (!followers.length) return;
-    const state = await this.publicState(claim);
-    for (const socket of followers) send(socket, state);
+    const snapshot = await this.publicSnapshot(claim);
+    for (const socket of followers) send(socket, snapshot);
   }
 
-  private async publicState(claim: Claim): Promise<ServerMessage> {
-    return { v: V, t: "public", competition: summary(claim), lifecycle: await this.lifecycle(), roster: this.roster() };
-  }
-
-  /** The Current Round's Roster. Nobody is on a Roster until Contestants send presence. */
-  private roster(): PublicEntry[] {
-    return [];
+  private async publicSnapshot(claim: Claim): Promise<ServerMessage> {
+    // Nobody is on a Roster until Contestants send presence.
+    return { v: V, t: "public", competition: summary(claim), lifecycle: await this.lifecycle(), roster: [] };
   }
 }
 
 /** Whether the socket has shown the Host secret. */
 const isHost = (socket: WebSocket) => (socket.deserializeAttachment() as Attachment).host === true;
 
+/** Whether the socket is a Stage or phone that follows the Current Round. */
 const follows = (socket: WebSocket) => (socket.deserializeAttachment() as Attachment).follows === true;
 
 const summary = (claim: Claim): CompetitionSummary => ({

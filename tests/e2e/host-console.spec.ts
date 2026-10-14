@@ -2,16 +2,10 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { decodeClaim } from "../../src/protocol/protocol.ts";
-import { newRound, turnOnAudience } from "./prep.ts";
+import { claimedConsole, desk, prepareCompetition } from "./host.ts";
 import { WORKER_ORGANIZER_KEY, WORKER_URL } from "./worker.ts";
 
-/** Prepares a Competition with two Rounds on the local Worker, and returns its Host console link. */
-async function hostConsoleLink(page: Page) {
-  await newRound(page);
-  await page.getByRole("button", { name: "+ Final" }).click();
-  await turnOnAudience(page, WORKER_URL);
-  return (await page.getByRole("link", { name: "Open Host console" }).getAttribute("href"))!;
-}
+const hostConsoleLink = async (page: Page) => (await prepareCompetition(page)).hostLink;
 
 test("the Host claims the Competition with the Organizer key, which nothing stores", async ({ page, context }) => {
   const link = await hostConsoleLink(page);
@@ -52,24 +46,6 @@ test("the Host claims the Competition with the Organizer key, which nothing stor
   await host.reload();
   await expect(host.getByRole("banner")).toContainText(`Join ${joinCode}`);
   await expect(host.getByLabel("Organizer key")).toHaveCount(0);
-});
-
-/** Opens the Host console link and claims the Competition. */
-async function claimedConsole(host: Page, link: string) {
-  await host.goto(link);
-  await host.getByLabel("Organizer key").fill(WORKER_ORGANIZER_KEY);
-  await host.getByRole("button", { name: "Claim" }).click();
-  await expect(host.getByRole("banner")).toContainText("live");
-}
-
-/** What the console shows of the Current Round. */
-const desk = (host: Page) => ({
-  rail: host.getByRole("navigation", { name: "Rounds" }),
-  heading: host.getByRole("heading", { level: 1 }),
-  step: host.getByRole("list", { name: "Lifecycle" }).locator('[aria-current="step"]'),
-  clock: host.getByRole("timer", { name: "Clock" }),
-  button: (name: string) => host.getByRole("main").getByRole("button", { name, exact: true }),
-  dialog: host.getByRole("dialog"),
 });
 
 test("the Host drives a Round from up next to results, and a reload gets the Worker's snapshot", async ({

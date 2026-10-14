@@ -26,9 +26,19 @@ export function CopyButton({ text, label, className }: { text: string; label: st
 /** A secret's first characters, enough to tell two apart, and the rest masked. */
 export const maskSecret = (secret: string) => `${secret.slice(0, 4)}${"•".repeat(16)}`;
 
-/** What a Round clock shows: the time left while running, counted from `endsAt` so it keeps going
- * while offline; the duration while up next; and 00:00 once time is up. It ticks while running. */
-export function useRoundClock(lifecycle: Lifecycle) {
+/** The Round clock: the time left while running, counted from `endsAt` so it keeps going while
+ * offline; the duration while up next; and 00:00 once time is up. Amber in the last minute, red
+ * or pink (the page's CSS decides) in the last 10 s. */
+export function RoundClock({ lifecycle, className }: { lifecycle: Lifecycle; className: string }) {
+  const { text, urgency } = useRoundClock(lifecycle);
+  return (
+    <div className={`clock ${className} ${urgency}`} role="timer" aria-label="Clock">
+      {text}
+    </div>
+  );
+}
+
+function useRoundClock(lifecycle: Lifecycle) {
   const [, tick] = useReducer((ticks: number) => ticks + 1, 0);
   const running = lifecycle.phase === "running";
   useEffect(() => {

@@ -9,7 +9,7 @@ body { margin: 0; background: #000; color: #f2f2f2; font: 16px/1.45 system-ui, -
   background: #07070a; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .popout {
-  position: absolute; left: 10px; top: 10px; opacity: 0; transition: opacity .2s;
+  position: absolute; left: 10px; top: 10px; opacity: .3; transition: opacity .2s;
   background: #1f2026; color: #e9e9ee; border: 1px solid #ffffff26; border-radius: 8px; padding: 6px 12px; font: 600 13px system-ui; cursor: pointer;
 }
 .popout:hover, .popout:focus-visible { opacity: 1; }

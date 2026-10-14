@@ -2,47 +2,27 @@
 // under `wrangler dev`.
 
 import { expect, test, type Page } from "@playwright/test";
-import { newRound, turnOnAudience } from "./prep.ts";
-import { WORKER_ORGANIZER_KEY, WORKER_URL } from "./worker.ts";
+import { claimedConsole, desk, prepareCompetition } from "./host.ts";
+import { WORKER_URL } from "./worker.ts";
 
 test.use({ viewport: { width: 1920, height: 1080 } });
 
-/** Prepares a Competition on the local Worker, and returns its Host console and Stage links. */
-async function prepare(page: Page) {
-  await newRound(page);
-  await turnOnAudience(page, WORKER_URL);
-  return {
-    hostLink: (await page.getByRole("link", { name: "Open Host console" }).getAttribute("href"))!,
-    stageLink: (await page.getByLabel("Stage link").textContent())!,
-    joinCode: (await page.getByLabel("Join code").textContent())!,
-  };
-}
-
-/** Opens the Host console link and claims the Competition. */
-async function claim(host: Page, link: string) {
-  await host.goto(link);
-  await host.getByLabel("Organizer key").fill(WORKER_ORGANIZER_KEY);
-  await host.getByRole("button", { name: "Claim" }).click();
-  await expect(host.getByRole("banner")).toContainText("live");
-}
-
 /** A claimed Competition with Heat 1 up next, and its Stage open. */
-async function upNext(page: Page, duration: string) {
-  const links = await prepare(page);
+async function upNext(page: Page, minutes: number) {
+  const links = await prepareCompetition(page);
   const host = await page.context().newPage();
-  await claim(host, links.hostLink);
-  await host.getByRole("navigation", { name: "Rounds" }).getByRole("button", { name: /^Heat 1/ }).click();
-  await host.getByLabel("Duration in minutes").fill(duration);
+  await claimedConsole(host, links.hostLink);
+  await desk(host).rail.getByRole("button", { name: /^Heat 1/ }).click();
+  await host.getByLabel("Duration in minutes").fill(String(minutes));
   await host.getByLabel("Duration in minutes").press("Enter");
   const stage = await page.context().newPage();
   await stage.goto(links.stageLink);
-  await expect(stage.getByRole("timer", { name: "Clock" })).toHaveText(`0${duration}:00`);
-  const start = () => host.getByRole("main").getByRole("button", { name: "Start Round" }).click();
-  return { ...links, host, stage, start };
+  await expect(stage.getByRole("timer", { name: "Clock" })).toHaveText(`${String(minutes).padStart(2, "0")}:00`);
+  return { ...links, host, stage, start: () => desk(host).button("Start Round").click() };
 }
 
 test("the Stage waits for the claim, then follows the Host from welcome to time's up", async ({ page, context }) => {
-  const { hostLink, stageLink, joinCode } = await prepare(page);
+  const { hostLink, stageLink, joinCode } = await prepareCompetition(page);
   const stage = await context.newPage();
   const joinUrl = `${WORKER_URL}/join?c=${joinCode}`;
   const qr = stage.getByRole("img", { name: `QR code for ${joinUrl}` });
@@ -54,11 +34,8 @@ test("the Stage waits for the claim, then follows the Host from welcome to time'
   await expect(stage.getByText(/^Code in the Dark editor \d+\.\d+\.\d+\+\w+$/)).toBeVisible();
 
   const host = await context.newPage();
-  await claim(host, hostLink);
-  const { rail, button } = {
-    rail: host.getByRole("navigation", { name: "Rounds" }),
-    button: (name: string) => host.getByRole("main").getByRole("button", { name, exact: true }),
-  };
+  await claimedConsole(host, hostLink);
+  const { rail, button, dialog } = desk(host);
 
   // Welcome: no Current Round.
   await expect(stage.getByText("Waiting for the Host")).toHaveCount(0);
@@ -86,7 +63,7 @@ test("the Stage waits for the claim, then follows the Host from welcome to time'
   await expect(qr).toBeVisible();
 
   await button("End early").click();
-  await host.getByRole("dialog").getByRole("button", { name: "End now" }).click();
+  await dialog.getByRole("button", { name: "End now" }).click();
   await expect(stage.getByText("Time's up · Reveals next")).toBeVisible();
   await expect(stage.getByRole("list", { name: "Roster" })).toBeVisible();
 
@@ -95,17 +72,22 @@ test("the Stage waits for the claim, then follows the Host from welcome to time'
   await expect(stage.getByRole("button")).toHaveAccessibleName("Pop out");
 });
 
-test("the QR on the Stage opens the Audience phone page", async ({ page }) => {
-  const { joinCode } = await prepare(page);
+test("the QR on the Stage opens the Audience phone page with the Join code", async ({ page, context }) => {
+  const { hostLink, stageLink, joinCode } = await prepareCompetition(page);
+  await claimedConsole(await context.newPage(), hostLink);
+  const stage = await context.newPage();
+  await stage.goto(stageLink);
 
-  await page.goto(`${WORKER_URL}/join?c=${joinCode}`);
+  const label = await stage.getByRole("img", { name: /^QR code for / }).getAttribute("aria-label");
+  const phone = await context.newPage();
+  await phone.goto(label!.replace(/^QR code for /, ""));
 
-  await expect(page.getByRole("heading", { name: "Join the Audience" })).toBeVisible();
-  await expect(page.getByText(joinCode)).toBeVisible();
+  await expect(phone.getByRole("heading", { name: "Join the Audience" })).toBeVisible();
+  await expect(phone.getByText(joinCode)).toBeVisible();
 });
 
 test("the Stage's clock turns amber in the last minute and throbs pink in the last 10 s", async ({ page }) => {
-  const { stage, start } = await upNext(page, "1");
+  const { stage, start } = await upNext(page, 1);
   await stage.clock.install();
   const clock = stage.getByRole("timer", { name: "Clock" });
   const white = await clock.evaluate((element) => getComputedStyle(element).color);
@@ -125,10 +107,10 @@ test("the Stage's clock turns amber in the last minute and throbs pink in the la
 });
 
 test("offline, the Stage shows a reconnecting marker and keeps counting from the last endsAt", async ({ page }) => {
-  const links = await prepare(page);
+  const links = await prepareCompetition(page);
   const host = await page.context().newPage();
-  await claim(host, links.hostLink);
-  await host.getByRole("navigation", { name: "Rounds" }).getByRole("button", { name: /^Heat 1/ }).click();
+  await claimedConsole(host, links.hostLink);
+  await desk(host).rail.getByRole("button", { name: /^Heat 1/ }).click();
 
   const stage = await page.context().newPage();
   let reachable = true;
@@ -141,7 +123,7 @@ test("offline, the Stage shows a reconnecting marker and keeps counting from the
   await stage.goto(links.stageLink);
   const clock = stage.getByRole("timer", { name: "Clock" });
   await expect(clock).toHaveText("15:00");
-  await host.getByRole("main").getByRole("button", { name: "Start Round" }).click();
+  await desk(host).button("Start Round").click();
   await expect(clock).toHaveText(/^14:5\d$/);
   await expect(stage.getByRole("status")).toHaveCount(0);
 
@@ -157,8 +139,17 @@ test("offline, the Stage shows a reconnecting marker and keeps counting from the
   await expect(clock).toHaveText(/^14:[0-5]\d$/);
 });
 
+test("a Stage that can't reach the Worker at all shows the reconnecting marker", async ({ page }) => {
+  await page.routeWebSocket(/\/socket\//, (socket) => void socket.close());
+
+  await page.goto(`${WORKER_URL}/stage/?c=K7XQ2N`);
+
+  await expect(page.getByText("Connecting to the Worker…")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("reconnecting");
+});
+
 test("the Stage pops out to its own window", async ({ page }) => {
-  const { stageLink } = await prepare(page);
+  const { stageLink } = await prepareCompetition(page);
   const stage = await page.context().newPage();
   await stage.goto(stageLink);
 

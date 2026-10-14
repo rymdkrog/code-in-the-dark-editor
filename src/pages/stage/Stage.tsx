@@ -8,14 +8,12 @@ import {
   isJoinCode,
   socketPath,
   V,
-  type CompetitionSummary,
-  type Lifecycle,
   type Phase,
-  type PublicEntry,
+  type PublicSnapshot,
   type ServerMessage,
 } from "../../protocol/protocol.ts";
 import { joinLink, sameOriginSocket } from "../links.ts";
-import { useRoundClock, VersionFooter } from "../shared.tsx";
+import { RoundClock, VersionFooter } from "../shared.tsx";
 import { Qr } from "./Qr.tsx";
 
 const WIDTH = 1920;
@@ -27,7 +25,7 @@ const POPPED_OUT = "citd-stage";
 type Standing =
   | { kind: "unknown" }
   | { kind: "unclaimed" }
-  | { kind: "claimed"; competition: CompetitionSummary; lifecycle: Lifecycle; roster: PublicEntry[] };
+  | ({ kind: "claimed" } & PublicSnapshot);
 
 export function Stage() {
   const [query] = useState(() => new URLSearchParams(location.search));
@@ -45,7 +43,8 @@ export function Stage() {
 }
 
 function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) {
-  const [online, setOnline] = useState(false);
+  // Null until the first connect succeeds or fails.
+  const [online, setOnline] = useState<boolean | null>(null);
   const [standing, setStanding] = useState<Standing>({ kind: "unknown" });
 
   useEffect(() => {
@@ -76,11 +75,11 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
           {/* The Worker learns the name only from the claim; until then it comes from the link. */}
           <div className="big">{name || joinCode}</div>
           <div className="sub">
-            {standing.kind === "unknown" ? "Connecting…" : "Waiting for the Host to open the Competition…"}
+            {standing.kind === "unknown" ? "Connecting to the Worker…" : "Waiting for the Host to open the Competition…"}
           </div>
         </div>
       )}
-      {!online && standing.kind !== "unknown" && (
+      {online === false && (
         <div className="st-offline" role="status">
           <i />
           reconnecting
@@ -123,7 +122,7 @@ const KICKERS: Record<Exclude<Phase, "running">, string> = {
   results: "Results",
 };
 
-function Screen({ competition, lifecycle, roster }: Extract<Standing, { kind: "claimed" }>) {
+function Screen({ competition, lifecycle, roster }: PublicSnapshot) {
   const join = { url: joinLink(location.origin, competition.joinCode), joinCode: competition.joinCode };
   const round = competition.rounds.find(({ id }) => id === lifecycle.current);
   if (!lifecycle.phase || !round) {
@@ -146,7 +145,7 @@ function Screen({ competition, lifecycle, roster }: Extract<Standing, { kind: "c
           <span>{competition.name}</span>
         </div>
         <div className="center">
-          <Clock lifecycle={lifecycle} className="giant" />
+          <RoundClock lifecycle={lifecycle} className="giant" />
         </div>
         <div className="bottom">
           <ul className="names" aria-label="Roster">
@@ -177,7 +176,7 @@ function Screen({ competition, lifecycle, roster }: Extract<Standing, { kind: "c
           <small>{KICKERS[lifecycle.phase]}</small>
           <span>{round.name}</span>
         </div>
-        {clock && <Clock lifecycle={lifecycle} />}
+        {clock && <RoundClock lifecycle={lifecycle} className="" />}
       </div>
       <ul className="tiles" aria-label="Roster">
         {roster.map((entry) => (
@@ -191,16 +190,7 @@ function Screen({ competition, lifecycle, roster }: Extract<Standing, { kind: "c
   );
 }
 
-function Clock({ lifecycle, className = "" }: { lifecycle: Lifecycle; className?: string }) {
-  const { text, urgency } = useRoundClock(lifecycle);
-  return (
-    <div className={`clock ${className} ${urgency}`} role="timer" aria-label="Clock">
-      {text}
-    </div>
-  );
-}
-
-function JoinFoot({ url, joinCode, verb }: { url: string; joinCode: string; verb: string }) {
+function JoinFoot({ url, joinCode, verb }: { url: string; joinCode: string; verb: "React" | "Vote" }) {
   return (
     <div className="foot">
       <Qr text={url} size={140} />

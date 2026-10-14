@@ -113,16 +113,25 @@ export type HostMessage =
   | { v: number; t: "claim"; organizerKey: string; claim: Claim }
   | ({ v: number } & LifecycleCommand);
 
-/** Sent by the Stage and Audience phones on every connect: they follow the Current Round, read-only. */
-export type FollowMessage = { v: number; t: "follow" };
-
 /** Anything a client may send. */
-export type ClientMessage = HostMessage | FollowMessage | { v: number; t: "ping" };
+export type ClientMessage =
+  | HostMessage
+  /** Sent by the Stage and Audience phones on every connect: they follow the Current Round, read-only. */
+  | { v: number; t: "follow" }
+  | { v: number; t: "ping" };
 
 /** A Roster entry as the Stage and phones see it. */
 export interface PublicEntry {
   id: string;
   name: string;
+}
+
+/** What the Stage and phones see of a claimed Competition: no secrets, and only the Current
+ * Round's Roster. */
+export interface PublicSnapshot {
+  competition: CompetitionSummary;
+  lifecycle: Lifecycle;
+  roster: PublicEntry[];
 }
 
 export type ServerMessage =
@@ -131,9 +140,8 @@ export type ServerMessage =
   | { v: number; t: "unclaimed" }
   /** The Host is in: the snapshot of the Competition, sent on every connect. */
   | { v: number; t: "competition"; competition: CompetitionSummary; lifecycle: Lifecycle }
-  /** What the Stage and phones see of a claimed Competition: no secrets, and only the Current
-   * Round's Roster. Sent when they follow, and again on every change. */
-  | { v: number; t: "public"; competition: CompetitionSummary; lifecycle: Lifecycle; roster: PublicEntry[] }
+  /** The Stage's and phones' snapshot. Sent when they follow, and again on every change. */
+  | ({ v: number; t: "public" } & PublicSnapshot)
   /** The lifecycle changed. Sent to every Host. */
   | { v: number; t: "lifecycle"; lifecycle: Lifecycle }
   /** A lifecycle command changed nothing. */

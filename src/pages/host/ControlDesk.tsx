@@ -12,7 +12,7 @@ import {
   type Phase,
 } from "../../protocol/protocol.ts";
 import { stageLink } from "../links.ts";
-import { CopyButton, formatClock, useRoundClock, VersionFooter } from "../shared.tsx";
+import { CopyButton, formatClock, RoundClock, VersionFooter } from "../shared.tsx";
 
 const PHASE_LABELS: Record<Phase, string> = {
   upcoming: "Up next",
@@ -246,13 +246,8 @@ function Duration({ durationMs, online, send }: { durationMs: number; online: bo
 
 /** Counts down from `endsAt` while running; it keeps counting while the console is offline. */
 function Clock({ lifecycle }: { lifecycle: Lifecycle }) {
-  const { text, urgency } = useRoundClock(lifecycle);
   if (lifecycle.phase === "voting" || lifecycle.phase === "results") return null;
-  return (
-    <div className={`clock mono ${urgency}`} role="timer" aria-label="Clock">
-      {text}
-    </div>
-  );
+  return <RoundClock lifecycle={lifecycle} className="mono" />;
 }
 
 const PhaseChip = ({ phase }: { phase: Phase }) => <span className={`chip ph-${phase}`}>{PHASE_LABELS[phase]}</span>;
