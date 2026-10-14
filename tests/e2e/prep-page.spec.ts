@@ -28,6 +28,10 @@ async function openPackage(browser: Browser, path: string) {
   const check = await gateNetwork(context);
   const page = await context.newPage();
   await page.goto(pathToFileURL(path).href);
+  const nameDialog = page.getByRole("dialog");
+  await nameDialog.getByRole("textbox").fill("Anna");
+  await page.keyboard.press("Enter");
+  await expect(nameDialog).toBeHidden();
   await expect(page.locator("#editor textarea")).toBeFocused();
   const round = await page.evaluate(
     () => JSON.parse(document.getElementById("round")!.textContent!) as RoundData,
@@ -173,9 +177,9 @@ test("an Organizer builds a Competition and exports a Round package that opens f
 
   expect(exported.fileName).toBe("citd-gothenburg-2026-heat-2.html");
   const opened = await openPackage(browser, exported.path);
-  // What the package carries is what its badge and Reference thumbnail show.
+  await expect(opened.page.getByRole("button", { name: "Anna · Heat 2" })).toBeVisible();
   expect(opened.round.competitionName).toBe("Gothenburg 2026");
-  expect(opened.round.roundName).toBe("Heat 2");
+  // What the package carries is what its Reference thumbnail shows.
   expect(opened.round.reference).toBe(pngDataUri(REFERENCE));
   await opened.close();
 });
