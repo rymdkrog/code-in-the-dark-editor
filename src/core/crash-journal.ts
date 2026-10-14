@@ -21,8 +21,8 @@ export interface CrashJournal {
 const DATABASE = "citd-autosave";
 const STORE = "saves";
 
-export function openCrashJournal(roundId: string): CrashJournal {
-  const key = `${roundId}:code`;
+/** The journal for one Round-prefixed storage key. */
+export function openCrashJournal(key: string): CrashJournal {
   const database = openDatabase();
 
   return {
@@ -33,7 +33,10 @@ export function openCrashJournal(roundId: string): CrashJournal {
         try {
           const request = db.transaction(STORE).objectStore(STORE).get(key);
           request.onsuccess = () => resolve(isSave(request.result) ? request.result : null);
-          request.onerror = () => resolve(null);
+          request.onerror = (event) => {
+            event.preventDefault();
+            resolve(null);
+          };
         } catch {
           resolve(null);
         }
@@ -42,7 +45,9 @@ export function openCrashJournal(roundId: string): CrashJournal {
     write(save) {
       void database.then((db) => {
         try {
-          db?.transaction(STORE, "readwrite").objectStore(STORE).put(save, key);
+          const request = db?.transaction(STORE, "readwrite").objectStore(STORE).put(save, key);
+          // Handled, so a failed write (a full disk) stays quiet.
+          if (request) request.onerror = (event) => event.preventDefault();
         } catch {
           // The localStorage copy stands.
         }
@@ -57,7 +62,10 @@ function openDatabase(): Promise<IDBDatabase | null> {
       const request = indexedDB.open(DATABASE, 1);
       request.onupgradeneeded = () => request.result.createObjectStore(STORE);
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(null);
+      request.onerror = (event) => {
+        event.preventDefault();
+        resolve(null);
+      };
       request.onblocked = () => resolve(null);
     } catch {
       resolve(null);
@@ -65,7 +73,7 @@ function openDatabase(): Promise<IDBDatabase | null> {
   });
 }
 
-const isSave = (value: unknown): value is Save =>
+export const isSave = (value: unknown): value is Save =>
   typeof value === "object" &&
   value !== null &&
   typeof (value as Save).code === "string" &&

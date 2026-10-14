@@ -15,6 +15,8 @@ const ENGINES = { chromium, firefox, webkit };
  * same storage, as a Contestant reopening their browser would.
  */
 function browserProfile(browserName: keyof typeof ENGINES) {
+  // Each test launches a browser twice; Firefox alone can take seconds to start.
+  test.slow();
   const dir = mkdtempSync(join(tmpdir(), "citd-profile-"));
   const checks: (() => void)[] = [];
   return {
@@ -41,7 +43,7 @@ function browserProfile(browserName: keyof typeof ENGINES) {
  * tears the page down mid-`pagehide`. There the tab closes once the 300 ms save is in, and
  * the refresh test covers the save in `pagehide`.
  */
-async function closeTab(page: Page, browserName: string) {
+async function closeTab(page: Page, browserName: keyof typeof ENGINES) {
   if (browserName === "webkit") {
     await page.waitForTimeout(400);
     await page.close();
@@ -120,35 +122,42 @@ test("killing the browser mid-typing loses at most the last 300 ms", async ({ br
   const reopened = await after.newPage();
   await openPackage(reopened);
 
-  const restored = await editorText(reopened);
+  // After a kill the code comes back from IndexedDB, which answers a moment after the editor opens.
   const safe = typed.findLast(({ at }) => at <= killedAt - 300)!.text;
+  await expect.poll(async () => (await editorText(reopened)).length).toBeGreaterThanOrEqual(safe.length);
+  const restored = await editorText(reopened);
   expect(keys.startsWith(restored), `restored ${JSON.stringify(restored)}`).toBe(true);
-  expect(restored.length, `restored ${JSON.stringify(restored)}`).toBeGreaterThanOrEqual(safe.length);
   await after.close();
   profile.checkGate();
 });
 
-// Headless pages are never hidden or blurred, so these events are fired by hand. Storage is
-// read in the same task, before the 300 ms save could run.
+// Headless pages are never hidden or blurred, so these events are fired by hand. The browser
+// is killed 100 ms later, before the 300 ms save could run.
 for (const leaving of ["blur", "visibilitychange→hidden"] as const) {
-  test(`switching away (${leaving}) saves at once`, async ({ page }) => {
-    const { roundId } = roundIn(PRACTICE);
+  test(`switching away (${leaving}) saves at once`, async ({ browserName }) => {
+    const profile = browserProfile(browserName);
+    const before = await profile.open();
+    const page = await before.newPage();
     await openPackage(page);
     await page.keyboard.type("x");
 
-    const saved = await page.evaluate(
-      ({ leaving, key }) => {
-        if (leaving === "blur") dispatchEvent(new Event("blur"));
-        else {
-          Object.defineProperty(document, "visibilityState", { value: "hidden" });
-          document.dispatchEvent(new Event("visibilitychange"));
-        }
-        return localStorage.getItem(key);
-      },
-      { leaving, key: `${roundId}:code` },
-    );
+    await page.evaluate((leaving) => {
+      if (leaving === "blur") dispatchEvent(new Event("blur"));
+      else {
+        Object.defineProperty(document, "visibilityState", { value: "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }
+    }, leaving);
+    await page.waitForTimeout(100);
+    profile.kill();
+    await before.close().catch(() => {});
+    const after = await profile.open();
+    const reopened = await after.newPage();
+    await openPackage(reopened);
 
-    expect(saved).toContain('"x"');
+    await expect.poll(() => editorText(reopened)).toBe("x");
+    await after.close();
+    profile.checkGate();
   });
 }
 
@@ -192,7 +201,9 @@ test("a newer Revision of the Round opens with the same autosave", async ({ page
   expect(await editorText(page)).toBe("my code");
 });
 
-// The name is the one deliberate exception: it belongs to the laptop, not the Round.
+// No Contestant sees storage keys, but the ticket requires the prefix: it is what keeps Rounds
+// apart in browsers that share one store across local files. The name is the one deliberate
+// exception: it belongs to the laptop, not the Round.
 test("every key the editor stores is under the Round id, and other keys are left alone", async ({ page }) => {
   const { roundId } = roundIn(PRACTICE);
   await openPackage(page);

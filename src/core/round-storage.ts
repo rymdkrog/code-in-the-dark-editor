@@ -3,6 +3,8 @@
 // Storage can be missing, full or throwing; these never throw, they report failure.
 
 export interface RoundStorage {
+  /** The full storage key for a name: the name under the Round id. */
+  key(name: string): string;
   /** The stored value, or null when there is none or storage can't be read. */
   get(name: string): string | null;
   /** Whether the write succeeded. */
@@ -14,6 +16,7 @@ export interface RoundStorage {
 export function roundStorage(roundId: string): RoundStorage {
   const key = (name: string) => `${roundId}:${name}`;
   const storage = {
+    key,
     get(name: string) {
       try {
         return localStorage.getItem(key(name));

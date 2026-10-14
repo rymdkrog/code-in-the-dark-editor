@@ -1,5 +1,5 @@
 import type { Ace } from "ace-builds";
-import { openCrashJournal, type Save } from "./crash-journal.ts";
+import { isSave, openCrashJournal, type Save } from "./crash-journal.ts";
 import { roundStorage } from "./round-storage.ts";
 
 const CODE = "code";
@@ -17,38 +17,43 @@ export function startAutosave(
 ) {
   const storage = roundStorage(roundId);
   onStorageWorking(storage.selfTest());
-  const journal = openCrashJournal(roundId);
+  const journal = openCrashJournal(storage.key(CODE));
   let lastSavedAt = 0;
   // Whether the Contestant has changed the code since it was restored. Until then there is
-  // nothing of theirs to save.
+  // nothing of theirs to save. It stays true once set, so every flush after it writes.
   let edited = false;
 
-  const restore = (save: Save | null) => {
-    if (!save) return;
-    lastSavedAt = Math.max(lastSavedAt, save.savedAt);
+  const restore = (save: Save) => {
     editor.setValue(save.code, -1);
     // Undo starts from the restored code, so it can't take the Contestant back to empty.
     editor.session.getUndoManager().reset();
     edited = false;
   };
 
-  restore(parseSave(storage.get(CODE)));
+  const saved = parseSave(storage.get(CODE));
+  if (saved) {
+    lastSavedAt = saved.savedAt;
+    restore(saved);
+  }
   // The journal answers within milliseconds, before anyone types. It has the newer copy only
   // when the browser was killed before localStorage reached disk.
   void journal.read().then((save) => {
-    if (save && save.savedAt > lastSavedAt && !edited) restore(save);
+    if (!save || save.savedAt <= lastSavedAt) return;
+    // Later saves must outrank this copy even when it isn't restored.
+    lastSavedAt = save.savedAt;
+    if (!edited) restore(save);
   });
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {
     clearTimeout(timer);
     timer = undefined;
-    // Writes even when nothing changed since the last save: Firefox can drop a write made
-    // as the tab starts to close, and the one in pagehide is what survives.
     if (!edited) return;
     // Strictly increasing, even if the clock steps back.
     lastSavedAt = Math.max(Date.now(), lastSavedAt + 1);
     const save = { code: editor.getValue(), savedAt: lastSavedAt };
+    // Written even when the code hasn't changed since the last save: Firefox can drop a write
+    // made as the tab starts to close, and the one in pagehide is what survives.
     onStorageWorking(storage.set(CODE, JSON.stringify(save)));
     journal.write(save);
   };
@@ -69,10 +74,10 @@ export function startAutosave(
 function parseSave(stored: string | null): Save | null {
   if (stored === null) return null;
   try {
-    const save = JSON.parse(stored) as Save;
-    if (typeof save.code === "string" && typeof save.savedAt === "number") return save;
+    const save: unknown = JSON.parse(stored);
+    return isSave(save) ? save : null;
   } catch {
     // Not ours; leave it be.
+    return null;
   }
-  return null;
 }
