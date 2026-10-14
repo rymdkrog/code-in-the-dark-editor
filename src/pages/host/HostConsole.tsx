@@ -7,17 +7,20 @@ import {
   type Claim,
   type ClaimRefusal,
   type CompetitionSummary,
+  type Lifecycle,
+  type LifecycleCommand,
   type ServerMessage,
 } from "../../protocol/protocol.ts";
-import { sameOriginSocket, stageLink } from "../links.ts";
-import { CopyButton, maskSecret, VersionFooter } from "../shared.tsx";
+import { sameOriginSocket } from "../links.ts";
+import { maskSecret, VersionFooter } from "../shared.tsx";
+import { ControlDesk } from "./ControlDesk.tsx";
 
 /** What the Worker has said about this Competition so far. */
 type Standing =
   | { kind: "unknown" }
   | { kind: "unclaimed" }
   | { kind: "refused" }
-  | { kind: "claimed"; competition: CompetitionSummary };
+  | { kind: "claimed"; competition: CompetitionSummary; lifecycle: Lifecycle };
 
 const REFUSALS: Record<ClaimRefusal, string> = {
   "organizer-key": "That Organizer key is wrong.",
@@ -63,7 +66,9 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
             return setStanding({ kind: "refused" });
           case "competition":
             setRefusal(null);
-            return setStanding({ kind: "claimed", competition: message.competition });
+            return setStanding({ kind: "claimed", competition: message.competition, lifecycle: message.lifecycle });
+          case "lifecycle":
+            return setStanding((was) => (was.kind === "claimed" ? { ...was, lifecycle: message.lifecycle } : was));
           case "claim-refused":
             return setRefusal(REFUSALS[message.reason] ?? REFUSALS.invalid);
         }
@@ -78,6 +83,10 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
     setRefusal(sent ? null : "Not connected to the Worker. Try again in a moment.");
   };
 
+  // Sent now or dropped: a command must never land late. A refused one changes nothing, and the
+  // console already shows the Worker's lifecycle.
+  const sendCommand = (command: LifecycleCommand) => socket.current?.send({ v: V, ...command }) ?? false;
+
   switch (standing.kind) {
     case "unknown":
       return <Notice title="Connecting to the Worker…">{online ? "Waiting for the Worker to answer." : null}</Notice>;
@@ -91,7 +100,14 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
     case "unclaimed":
       return <ClaimScreen claim={claim} online={online} refusal={refusal} onClaim={sendClaim} />;
     case "claimed":
-      return <ControlDesk competition={standing.competition} online={online} />;
+      return (
+        <ControlDesk
+          competition={standing.competition}
+          lifecycle={standing.lifecycle}
+          online={online}
+          send={sendCommand}
+        />
+      );
   }
 }
 
@@ -145,57 +161,6 @@ function ClaimScreen(props: { claim: Claim; online: boolean; refusal: string | n
         </p>
       </form>
       <VersionFooter className="version" />
-    </div>
-  );
-}
-
-function ControlDesk({ competition, online }: { competition: CompetitionSummary; online: boolean }) {
-  return (
-    <div className={`host ${online ? "" : "offline"}`}>
-      {!online && (
-        <div className="offline-banner" role="status">
-          Connection lost — reconnecting… Controls are paused.
-        </div>
-      )}
-      <header className="top">
-        <span className="brand">CITD Host</span>
-        <span>{competition.name || <i>unnamed</i>}</span>
-        <span className="sp" />
-        <span className="muted">
-          Join <b className="mono code">{competition.joinCode}</b>
-        </span>
-        <span>
-          <span className={`dot ${online ? "" : "off"}`} /> {online ? "live" : "reconnecting"}
-        </span>
-        <CopyButton
-          className="btn sm ghost"
-          text={stageLink(location.origin, competition.joinCode)}
-          label="Copy Stage link"
-        />
-      </header>
-      <div className="body">
-        <nav className="rail" aria-label="Rounds">
-          <div className="rail-h">On the Stage</div>
-          <div className="rail-item on">
-            <b>Welcome screen</b>
-            <small>No Round. Join code and QR.</small>
-          </div>
-          <div className="rail-h">Rounds</div>
-          {competition.rounds.map((round) => (
-            <div key={round.id} className="rail-item">
-              <b>{round.name}</b>
-            </div>
-          ))}
-          <VersionFooter className="version" />
-        </nav>
-        <main>
-          <div className="head">
-            <h1>Welcome screen</h1>
-            <span className="chip">No Round</span>
-          </div>
-          <p className="muted">The Stage shows the Competition name, the Join code and a QR.</p>
-        </main>
-      </div>
     </div>
   );
 }

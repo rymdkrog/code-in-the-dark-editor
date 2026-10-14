@@ -41,6 +41,10 @@ The last Round of a Competition, contested by Heat winners, with its own Referen
 **Current Round**:
 The one Round the Host has put in front of the Audience; at most one Round is current at a time. With none, the Stage shows the welcome screen (Competition name, Join code and QR).
 
+**Phase**:
+Where the Current Round is: up next, running, time's up, voting or results. The Host moves it on; reaching the end of the time moves running to time's up. The Reveal is not a phase.
+_Avoid_: State, status, stage
+
 **Roster**:
 The Contestants taking part in a Round, as the Host and Audience see them. Contestants still looking at an earlier Round's work are not on the current Round's Roster.
 _Avoid_: Lineup, participants

@@ -1,5 +1,6 @@
 // One Durable Object per Competition, addressed by its Join code. Plain WebSocket Hibernation
-// API, no framework. Its storage, not its memory, holds the claim, so a restart loses nothing.
+// API, no framework. Its storage, not its memory, holds the claim and the lifecycle, so a
+// restart loses nothing.
 
 import { DurableObject } from "cloudflare:workers";
 import {
@@ -12,9 +13,12 @@ import {
   type Claim,
   type ClientMessage,
   type CompetitionSummary,
+  type Lifecycle,
+  type LifecycleCommand,
   type ServerMessage,
 } from "../src/protocol/protocol.ts";
 import type { Env } from "./index.ts";
+import { isLifecycleCommand, timesUp, transition, WELCOME } from "./lifecycle.ts";
 
 /** What a socket carries through hibernation. */
 interface Attachment {
@@ -58,13 +62,22 @@ export class Competition extends DurableObject<Env> {
       case "claim":
         return this.claim(socket, message.organizerKey, message.claim);
     }
+    if (isLifecycleCommand(message)) return this.command(socket, message);
+  }
+
+  /** Reaching `endsAt` puts the running Round at time's up. */
+  async alarm(): Promise<void> {
+    const lifecycle = await this.lifecycle();
+    if (lifecycle.phase !== "running") return;
+    if (Date.now() < lifecycle.endsAt!) return this.ctx.storage.setAlarm(lifecycle.endsAt!);
+    await this.change(timesUp(lifecycle));
   }
 
   private async greetHost(socket: WebSocket, hostSecret: unknown) {
     const claim = await this.ctx.storage.get<Claim>("claim");
     if (!claim) return send(socket, { v: V, t: "unclaimed" });
     if (!sameSecret(hostSecret, claim.hostSecret)) return send(socket, { v: V, t: "host-refused" });
-    this.admitHost(socket, claim);
+    await this.admitHost(socket, claim);
   }
 
   private async claim(socket: WebSocket, organizerKey: unknown, claim: unknown) {
@@ -82,14 +95,42 @@ export class Competition extends DurableObject<Env> {
       return send(socket, { v: V, t: "claim-refused", reason: "claimed" });
     }
     if (!existing) await this.ctx.storage.put("claim", claim);
-    this.admitHost(socket, existing ?? claim);
+    await this.admitHost(socket, existing ?? claim);
   }
 
-  private admitHost(socket: WebSocket, claim: Claim) {
+  private async admitHost(socket: WebSocket, claim: Claim) {
     socket.serializeAttachment({ ...(socket.deserializeAttachment() as Attachment), host: true } satisfies Attachment);
-    send(socket, { v: V, t: "competition", competition: summary(claim) });
+    send(socket, { v: V, t: "competition", competition: summary(claim), lifecycle: await this.lifecycle() });
+  }
+
+  private async command(socket: WebSocket, command: LifecycleCommand) {
+    if (!isHost(socket)) {
+      return send(socket, { v: V, t: "refused", command: command.t, reason: "host-secret" });
+    }
+    // A socket is a Host's only once the Competition is claimed.
+    const { rounds } = (await this.ctx.storage.get<Claim>("claim"))!;
+    const next = transition(await this.lifecycle(), command, rounds, Date.now());
+    if (!next) return send(socket, { v: V, t: "refused", command: command.t, reason: "transition" });
+    await this.change(next);
+  }
+
+  private async lifecycle(): Promise<Lifecycle> {
+    return (await this.ctx.storage.get<Lifecycle>("lifecycle")) ?? WELCOME;
+  }
+
+  /** Stores a new lifecycle, keeps the alarm on its `endsAt`, and tells every Host. */
+  private async change(lifecycle: Lifecycle) {
+    await this.ctx.storage.put("lifecycle", lifecycle);
+    if (lifecycle.endsAt === null) await this.ctx.storage.deleteAlarm();
+    else await this.ctx.storage.setAlarm(lifecycle.endsAt);
+    for (const socket of this.ctx.getWebSockets()) {
+      if (isHost(socket)) send(socket, { v: V, t: "lifecycle", lifecycle });
+    }
   }
 }
+
+/** Whether the socket has shown the Host secret. */
+const isHost = (socket: WebSocket) => (socket.deserializeAttachment() as Attachment).host === true;
 
 const summary = (claim: Claim): CompetitionSummary => ({
   name: claim.competitionName,

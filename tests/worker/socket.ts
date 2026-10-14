@@ -1,9 +1,29 @@
 // Seam 2: the Worker, run in workerd by Wrangler's test harness, driven over real sockets.
 
 import { createTestHarness } from "wrangler";
-import { V, socketPath, type Role, type ServerMessage } from "../../src/protocol/protocol.ts";
+import { JOIN_CODE_ALPHABET, V, socketPath, type Claim, type Role, type ServerMessage } from "../../src/protocol/protocol.ts";
 
 export const ORGANIZER_KEY = "test-organizer-key";
+
+let codes = 0;
+
+/** A fresh claim with its own Join code, so tests don't share a Durable Object. Each test file
+ * passes its own two-letter prefix. */
+export function newClaim(prefix: string): Claim {
+  const n = codes++;
+  const joinCode = `${prefix}${JOIN_CODE_ALPHABET[Math.floor(n / JOIN_CODE_ALPHABET.length)]}${JOIN_CODE_ALPHABET[n % JOIN_CODE_ALPHABET.length]}AA`;
+  return {
+    competitionName: "Gothenburg 2026",
+    joinCode,
+    hostSecret: `host-secret-${joinCode}`,
+    contestantToken: `contestant-token-${joinCode}`,
+    rounds: [
+      { id: "heat1aaaaa", name: "Heat 1" },
+      { id: "heat2aaaaa", name: "Heat 2" },
+      { id: "finalaaaaa", name: "Final" },
+    ],
+  };
+}
 
 export function startWorker() {
   return createTestHarness({
@@ -17,8 +37,8 @@ export type Worker = ReturnType<typeof startWorker>;
 /** A real WebSocket to the Worker, with the messages it has received queued up for `next()`. */
 export interface TestSocket {
   send(message: object | string): void;
-  /** The next message the Worker sends. */
-  next(): Promise<ServerMessage>;
+  /** The next message the Worker sends, within `within` ms (2 s by default). */
+  next(within?: number): Promise<ServerMessage>;
   /** Resolves with the close code once the Worker closes the socket. */
   closed: Promise<number>;
   close(): void;
@@ -49,12 +69,12 @@ export async function connect(
   });
   return {
     send: (message) => socket.send(typeof message === "string" ? message : JSON.stringify({ v: V, ...message })),
-    next: () =>
+    next: (within = 2000) =>
       received.length
         ? Promise.resolve(received.shift()!)
         : new Promise((resolve, reject) => {
             waiting.push(resolve);
-            setTimeout(() => reject(new Error("No message from the Worker within 2 s")), 2000);
+            setTimeout(() => reject(new Error(`No message from the Worker within ${within} ms`)), within);
           }),
     closed,
     close: () => socket.close(),

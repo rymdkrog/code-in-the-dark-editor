@@ -64,11 +64,54 @@ export type ClaimRefusal =
   /** The claim is missing a field. */
   | "invalid";
 
+/** The phases of the Current Round, in the order the Host steps through them. `upcoming` is
+ * "up next". The Reveal is not a phase: the Worker never knows about it. */
+export const PHASES = ["upcoming", "running", "timesup", "voting", "results"] as const;
+export type Phase = (typeof PHASES)[number];
+
+/** A Round's duration until the Host sets another. */
+export const DEFAULT_DURATION_MS = 15 * 60_000;
+/** The Worker accepts any whole number of seconds up to this; the Host console sets whole minutes. */
+export const MAX_DURATION_MS = 90 * 60_000;
+
+/** The Current Round and where it is. The Durable Object stores it; every Host gets it. */
+export interface Lifecycle {
+  /** The Current Round's id, or null for the welcome screen. */
+  current: string | null;
+  /** Null exactly when there is no Current Round. */
+  phase: Phase | null;
+  /** How long a Round runs once started. Set while up next, and kept from Round to Round. */
+  durationMs: number;
+  /** When a running Round's time is up, in epoch ms. Set only while running. */
+  endsAt: number | null;
+}
+
+/** The Host's lifecycle commands. Each needs a socket that has shown the Host secret. */
+export type LifecycleCommand =
+  /** Makes a Round current, up next; null clears to the welcome screen. */
+  | { t: "make-current"; roundId: string | null }
+  /** Whole seconds, up to 90 min. The Host console sets whole minutes. */
+  | { t: "set-duration"; durationMs: number }
+  | { t: "start" }
+  | { t: "add-time"; ms: 30_000 | 60_000 }
+  | { t: "end-early" }
+  | { t: "open-voting" }
+  | { t: "close-voting" }
+  | { t: "reopen-voting" }
+  | { t: "back-to-up-next" };
+
+export type CommandRefusal =
+  /** The socket hasn't shown the Host secret. */
+  | "host-secret"
+  /** The command isn't a transition from where the Current Round is, or its fields are invalid. */
+  | "transition";
+
 export type HostMessage =
   /** Sent on every connect: who this Host is. */
   | { v: number; t: "host"; hostSecret: string }
   /** Claims an unclaimed Competition. The Organizer key is a Worker secret that nothing stores. */
-  | { v: number; t: "claim"; organizerKey: string; claim: Claim };
+  | { v: number; t: "claim"; organizerKey: string; claim: Claim }
+  | ({ v: number } & LifecycleCommand);
 
 /** Anything a client may send. */
 export type ClientMessage = HostMessage | { v: number; t: "ping" };
@@ -77,8 +120,12 @@ export type ServerMessage =
   | { v: number; t: "pong" }
   /** The Competition hasn't been claimed yet. */
   | { v: number; t: "unclaimed" }
-  /** The Host is in: the snapshot of the Competition. */
-  | { v: number; t: "competition"; competition: CompetitionSummary }
+  /** The Host is in: the snapshot of the Competition, sent on every connect. */
+  | { v: number; t: "competition"; competition: CompetitionSummary; lifecycle: Lifecycle }
+  /** The lifecycle changed. Sent to every Host. */
+  | { v: number; t: "lifecycle"; lifecycle: Lifecycle }
+  /** A lifecycle command changed nothing. */
+  | { v: number; t: "refused"; command: LifecycleCommand["t"]; reason: CommandRefusal }
   | { v: number; t: "claim-refused"; reason: ClaimRefusal }
   /** The Competition is claimed, but not with this Host secret. */
   | { v: number; t: "host-refused" };
