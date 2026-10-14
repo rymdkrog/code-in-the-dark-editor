@@ -19,6 +19,7 @@ const TEMPLATE = `<!-- licences -->
 
 const round: RoundData = {
   competitionName: "Gothenburg 2026",
+  filePrefix: "gbg26",
   roundName: "Heat 2",
   roundId: "r_8f3kq2",
   revision: "3-202610121403",

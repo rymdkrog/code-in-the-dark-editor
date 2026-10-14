@@ -2,6 +2,8 @@
 
 import { base64url, isJoinCode, JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, type Claim } from "../../protocol/protocol.ts";
 import type { RoundData } from "../../round-package/round-data.ts";
+import { revisionTime } from "../../round-package/revision.ts";
+import { slugify } from "../../round-package/slug.ts";
 
 /** A Reference or an asset, read from the Organizer's file. */
 export interface Asset {
@@ -149,15 +151,6 @@ const ID_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
 
 export function mintRoundId(): string {
   return [...crypto.getRandomValues(new Uint8Array(10))].map((byte) => ID_ALPHABET[byte % 32]).join("");
-}
-
-function slugify(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
 }
 
 /** The file prefix as the Organizer typed it, or derived from the Competition name. */
@@ -315,16 +308,11 @@ export const changedRounds = (competition: Competition): Round[] =>
     return kind === "not exported" || kind === "changed";
   });
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /** "Rev 3 · 12 Oct 14:03", in UTC like the stamp. */
 export const formatRevision = (revision: Revision) => `Rev ${revision.n} · ${formatExportTime(revision)}`;
 
 /** "12 Oct 14:03": when a Revision was exported, in UTC like the stamp. */
-export function formatExportTime({ stamp }: Revision): string {
-  const [, month, day, hour, minute] = stamp.match(/-\d{4}(\d\d)(\d\d)(\d\d)(\d\d)$/)!;
-  return `${Number(day)} ${MONTHS[Number(month) - 1]} ${hour}:${minute}`;
-}
+export const formatExportTime = ({ stamp }: Revision): string => revisionTime(stamp);
 
 /** What the Instructions overlay shows for a Round. */
 export function roundInstructions(competition: Competition, round: Round): Pick<RoundData, "instructions" | "assets"> {
@@ -344,6 +332,7 @@ export function roundData(
   if (!round.reference) throw new Error(`${round.name} has no Reference`);
   return {
     competitionName: competition.name,
+    filePrefix: fileSlug(competition),
     roundName: round.name,
     roundId: round.id,
     revision: revision.stamp,

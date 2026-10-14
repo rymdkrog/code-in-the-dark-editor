@@ -1,10 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { chromium, expect, firefox, webkit, type BrowserContext, type Page } from "@playwright/test";
 import { gateNetwork } from "./no-network-gate.ts";
-import { editorText, makePackage, openPackage, PRACTICE, roundIn, test } from "./package.ts";
+import {
+  downloadBackup,
+  editorText,
+  makePackage,
+  openPackage,
+  PRACTICE,
+  restoreFrom,
+  roundIn,
+  test,
+} from "./package.ts";
 
 // The recovery suite: a Contestant never loses work.
 
@@ -199,6 +208,66 @@ test("a newer Revision of the Round opens with the same autosave", async ({ page
   await openPackage(page, second);
 
   expect(await editorText(page)).toBe("my code");
+});
+
+test("a .txt backup restores the code into a browser that lost the Round's storage, and is autosaved there", async ({
+  browser,
+  page,
+}) => {
+  await openPackage(page);
+  await page.keyboard.type("<h1>Backed up</h1>");
+  const code = await editorText(page);
+  const backup = test.info().outputPath("backup.txt");
+  await downloadBackup(page, backup);
+  expect(readFileSync(backup, "utf8")).toBe(code);
+
+  // Storage lost: a browser with none of this Round's.
+  const lost = await browser.newContext();
+  const checkGate = await gateNetwork(lost);
+  const reopened = await lost.newPage();
+  await openPackage(reopened);
+  expect(await editorText(reopened)).toBe("");
+  await restoreFrom(reopened, backup);
+  await reopened.getByRole("dialog").getByRole("button", { name: "Restore" }).click();
+  await expect.poll(() => editorText(reopened)).toBe(code);
+
+  await reopened.reload();
+  await expect.poll(() => editorText(reopened)).toBe(code);
+  await lost.close();
+  checkGate();
+});
+
+test("Firefox: a package moved to a new path opens empty, and Restore from backup brings the code back", async ({
+  browserName,
+}) => {
+  test.skip(browserName !== "firefox", "Only Firefox keeps one store per file path");
+  // Firefox as Contestants run it, with one store per file path. Playwright's Firefox shares
+  // one store across all local files.
+  const browser = await firefox.launch({ firefoxUserPrefs: { "security.fileuri.strict_origin_policy": true } });
+  const context = await browser.newContext();
+  const checkGate = await gateNetwork(context);
+  const page = await context.newPage();
+  const round = { roundId: "heat-2-a1b2c3", roundName: "Heat 2" };
+  const downloaded = makePackage(test.info().outputPath("Downloads/citd-heat-2.html"), round);
+  await openPackage(page, downloaded);
+  await page.keyboard.type("my code");
+  const backup = test.info().outputPath("backup.txt");
+  await downloadBackup(page, backup);
+
+  // The Contestant moves the file to the desktop and opens it from there.
+  const moved = test.info().outputPath("Desktop/citd-heat-2.html");
+  mkdirSync(dirname(moved), { recursive: true });
+  renameSync(downloaded, moved);
+  await openPackage(page, moved);
+  expect(await editorText(page)).toBe("");
+  await restoreFrom(page, backup);
+  await page.getByRole("dialog").getByRole("button", { name: "Restore" }).click();
+
+  await expect.poll(() => editorText(page)).toBe("my code");
+  await page.reload();
+  await expect.poll(() => editorText(page)).toBe("my code");
+  await browser.close();
+  checkGate();
 });
 
 // No Contestant sees storage keys, but the ticket requires the prefix: it is what keeps Rounds

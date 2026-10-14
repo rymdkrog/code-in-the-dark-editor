@@ -1,5 +1,6 @@
 {
   "competitionName": "Code in the Dark",
+  "filePrefix": "citd",
   "roundName": "Practice",
   "roundId": "practice-6d1f0b9a4c",
   "shake": true,

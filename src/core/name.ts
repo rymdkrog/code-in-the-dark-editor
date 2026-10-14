@@ -44,6 +44,8 @@ export function startNameBadge(round: RoundData, editor: { focus(): void }) {
   const saved = loadName();
   if (saved) setName(saved);
   else dialog.showModal();
+  // The name as it is now: it can change whenever the badge is clicked.
+  return { name: () => name };
 }
 
 // Storage can be off or full. Without it the name lasts until the page closes.

@@ -1,6 +1,7 @@
 import type { Ace } from "ace-builds";
 import type { RoundData } from "../round-package/round-data.ts";
 import { rewriteAssets } from "./reveal-assets.ts";
+import { typedConfirm } from "./typed-confirm.ts";
 
 // Published on `window` whether or not anyone listens. The Enhancement only ever listens.
 const REVEAL_STARTED = "citd:reveal-started";
@@ -15,20 +16,9 @@ const REVEAL_ENDED = "citd:reveal-ended";
 export function setUpReveal(round: RoundData, editor: Ace.Editor, { onStart }: { onStart(): void }) {
   const button = document.querySelector<HTMLButtonElement>(".reveal-button")!;
   const dialog = document.querySelector<HTMLDialogElement>(".reveal-dialog")!;
-  const input = dialog.querySelector<HTMLInputElement>("input")!;
   let result: HTMLIFrameElement | null = null;
 
-  // The form won't submit without "yes", and the browser says why.
-  const validate = () =>
-    input.setCustomValidity(input.value.trim().toLowerCase() === "yes" ? "" : 'Type "yes" to reveal');
-  input.addEventListener("input", validate);
-
-  button.addEventListener("click", () => {
-    input.value = "";
-    validate();
-    dialog.showModal();
-  });
-  dialog.querySelector(".reveal-dialog-cancel")!.addEventListener("click", () => dialog.close());
+  button.addEventListener("click", typedConfirm(dialog, "yes", 'Type "yes" to reveal'));
   dialog.addEventListener("submit", reveal);
   dialog.addEventListener("close", () => {
     if (!result) editor.focus();

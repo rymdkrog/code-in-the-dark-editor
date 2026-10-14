@@ -3,6 +3,8 @@
 
 export interface RoundData {
   competitionName: string;
+  /** What the Competition's file names start with, e.g. `gbg26`: already a slug. */
+  filePrefix: string;
   roundName: string;
   /** Random, minted once per Round, stable across re-exports. Prefixes every storage key. */
   roundId: string;

@@ -400,6 +400,8 @@ test("the Competition's shake switch and file prefix reach the package", async (
   expect(exported.fileName).toBe("citd-gbg26-heat-1.html");
   const opened = await openPackage(browser, exported.path);
   expect(opened.round.shake).toBe(false);
+  // The Contestant's backups are named from it.
+  expect(opened.round.filePrefix).toBe("gbg26");
   await opened.close();
 });
 

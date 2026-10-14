@@ -48,6 +48,25 @@ export async function enterName(page: Page, name: string) {
   await expect(dialog).toBeHidden();
 }
 
+export const menuButton = (page: Page) => page.getByRole("button", { name: "Menu" });
+export const menuItem = (page: Page, name: string) => page.getByRole("menuitem", { name });
+
+/** Downloads a backup from the ⋯ menu and keeps it at `file`. */
+export async function downloadBackup(page: Page, file: string) {
+  const download = page.waitForEvent("download");
+  await menuButton(page).click();
+  await menuItem(page, "Download backup").click();
+  await (await download).saveAs(file);
+}
+
+/** Picks `file` in the file chooser that Restore from backup… opens; a dialog then asks to confirm. */
+export async function restoreFrom(page: Page, file: string) {
+  const chooser = page.waitForEvent("filechooser");
+  await menuButton(page).click();
+  await menuItem(page, "Restore from backup…").click();
+  await (await chooser).setFiles(file);
+}
+
 export const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 

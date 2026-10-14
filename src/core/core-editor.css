@@ -304,6 +304,51 @@ button:focus {
   outline: none;
 }
 
+/* Press Start 2P has no ⋯, and the fallback's is small: bigger, at the other buttons' height. */
+.menu-button {
+  margin-right: 10px;
+  font-size: 24px;
+  line-height: 12px;
+}
+
+/* Covers the page, so a click beside the panel closes it, as with the Instructions. */
+.menu {
+  position: absolute;
+  z-index: 100;
+  inset: 0;
+}
+
+/* Above the button bar, over the Reference, in the dialogs' look. */
+.menu-panel {
+  position: absolute;
+  right: 20px;
+  bottom: 62px;
+  padding: 15px;
+  border: 4px solid #3a9364;
+  background: black;
+  color: white;
+  font-size: 10px;
+}
+
+.menu-panel [role="menu"] {
+  display: grid;
+  gap: 10px;
+}
+
+.menu-panel [role="menu"] button {
+  text-align: left;
+}
+
+.menu-panel [role="menu"] button:focus {
+  outline: 2px solid white;
+}
+
+.menu-version {
+  margin: 15px 0 0;
+  opacity: 0.6;
+  user-select: text;
+}
+
 @keyframes pulse {
   0% {
     animation-timing-function: ease-out;
@@ -450,15 +495,21 @@ body.revealing > :not(.result, .name-badge, dialog) {
   100% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
 }
 
-/* Shown while autosave fails, until a save succeeds. */
+/* Shown while autosave fails, until a save succeeds. A click opens the ⋯ menu. */
 .storage-failing {
   position: absolute;
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
+  padding: 0;
+  background: none;
   color: #f9ff00;
   line-height: 0;
+}
+
+body.power-mode button.storage-failing {
+  background: none;
 }
 
 .storage-failing[hidden] {

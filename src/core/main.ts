@@ -3,6 +3,7 @@ import { startAutosave } from "./autosave.ts";
 import { startCombo } from "./combo.ts";
 import { startEditor } from "./editor.ts";
 import { setUpInstructions } from "./instructions.ts";
+import { setUpMenu } from "./menu.ts";
 import { startNameBadge } from "./name.ts";
 import { setUpReference } from "./reference.ts";
 import { startParticles } from "./particles.ts";
@@ -21,7 +22,10 @@ if (round) {
 
   const storageFailing = document.querySelector<HTMLElement>(".storage-failing")!;
   startAutosave(editor, round.roundId, (working) => (storageFailing.hidden = working));
-  startNameBadge(round, editor);
+  const nameBadge = startNameBadge(round, editor);
+  const menu = setUpMenu(round, editor, { contestantName: nameBadge.name });
+  // The way to a backup when autosave fails.
+  storageFailing.addEventListener("click", menu.open);
   // Last: as in the original, code put in the editor before this doesn't count to the Combo.
   const combo = startCombo(editor);
   startParticles(editor, combo);
@@ -34,7 +38,8 @@ if (round) {
   window.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || event.repeat || event.defaultPrevented || reveal.isRevealed()) return;
     if (event.target instanceof Element && event.target.closest("dialog")) return;
-    if (instructions.isOpen()) instructions.close();
+    if (menu.isOpen()) menu.close();
+    else if (instructions.isOpen()) instructions.close();
     else reference.toggle();
   });
 } else {

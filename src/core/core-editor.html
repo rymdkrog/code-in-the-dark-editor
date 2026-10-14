@@ -40,20 +40,47 @@
 <div class="button-bar" hidden>
   <button type="button" class="reveal-button">Reveal</button>
   <button type="button" class="instructions-button">Instructions</button>
+  <button type="button" class="menu-button" aria-label="Menu" aria-haspopup="menu" aria-expanded="false">⋯</button>
 </div>
-<div class="storage-failing" role="img" title="Autosave isn't working — download a backup" aria-label="Autosave isn't working — download a backup" hidden>
+<div class="menu" hidden>
+  <div class="menu-panel">
+    <div role="menu" aria-label="Menu">
+      <button type="button" role="menuitem">Download backup</button>
+      <button type="button" role="menuitem">Restore from backup…</button>
+      <button type="button" role="menuitem">Reset Round</button>
+    </div>
+    <p class="menu-version"></p>
+  </div>
+</div>
+<input type="file" class="restore-file" hidden>
+<button type="button" class="storage-failing" title="Autosave isn't working — download a backup" aria-label="Autosave isn't working — download a backup" hidden>
   <svg viewBox="0 0 16 16" width="24" height="24" aria-hidden="true">
     <path d="M8 1 15 14H1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
     <path d="M8 6v4M8 11.5v1" stroke="currentColor" stroke-width="1.5"/>
   </svg>
-</div>
+</button>
 <dialog class="reveal-dialog">
   <form method="dialog">
     <label>This will show the result of your code. Doing this before the Round is over WILL DISQUALIFY
       YOU. Are you sure you want to proceed? Type "yes" to confirm.
       <input name="confirm" autocomplete="off"></label>
     <button>Reveal</button>
-    <button type="button" class="reveal-dialog-cancel">Cancel</button>
+    <button type="button" class="dialog-cancel">Cancel</button>
+  </form>
+</dialog>
+<dialog class="restore-dialog">
+  <form method="dialog">
+    <p>Replace this Round's code with <span class="restore-dialog-file"></span>? The code you have now will be lost.</p>
+    <button>Restore</button>
+    <button type="button" class="dialog-cancel">Cancel</button>
+  </form>
+</dialog>
+<dialog class="reset-dialog">
+  <form method="dialog">
+    <label>This will empty the Round, and the code you have now will be lost. Type "reset" to confirm.
+      <input name="confirm" autocomplete="off"></label>
+    <button>Reset</button>
+    <button type="button" class="dialog-cancel">Cancel</button>
   </form>
 </dialog>
 <script type="application/json" id="round"></script>
