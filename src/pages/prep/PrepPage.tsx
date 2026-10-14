@@ -38,7 +38,7 @@ type Action =
   | { type: "rename-competition"; name: string }
   | { type: "set-rules"; rules: string }
   | { type: "set-shake"; shake: boolean }
-  | { type: "set-prefix"; prefix: string }
+  | { type: "set-prefix"; prefix: string | null }
   | { type: "add-round"; kind: Round["kind"]; id: string }
   | { type: "change-round"; id: string; change: (round: Round) => Round }
   | { type: "replace"; competition: Competition }
@@ -257,6 +257,8 @@ export function PrepPage() {
                 className="mono"
                 value={filePrefix(competition)}
                 onChange={(event) => dispatch({ type: "set-prefix", prefix: event.target.value })}
+                // Left empty, it follows the Competition name again.
+                onBlur={(event) => event.target.value.trim() || dispatch({ type: "set-prefix", prefix: null })}
               />
             </label>
           </section>

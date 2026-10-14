@@ -22,10 +22,7 @@ export interface Revision {
 }
 
 /** A colour Contestants are given exactly, as `#RRGGBB`, with an optional label. */
-export interface Colour {
-  hex: string;
-  label: string;
-}
+export type Colour = RoundData["instructions"]["colours"][number];
 
 export interface Round {
   /** Random, minted once when the Round is added, and kept across re-exports. */
@@ -215,7 +212,7 @@ export const fileBytes = (asset: Asset) =>
 /** Roughly how big a Round's package will be, given the template's size. */
 export function estimatedPackageBytes(competition: Competition, round: Round, templateBytes: number): number {
   const files = round.reference ? [round.reference, ...round.assets] : round.assets;
-  return templateBytes + competition.rules.length + round.note.length + files.reduce((sum, file) => sum + file.dataUri.length, 0);
+  return templateBytes + competition.rules.length + round.note.length + JSON.stringify(round.colours).length + files.reduce((sum, file) => sum + file.dataUri.length, 0);
 }
 
 /** The next Revision of a Round, stamped with the UTC minute of `now`. */
@@ -459,7 +456,7 @@ const ORIGINAL_EDITOR_FILES = ["page.png", "instructions.html", "result.html"];
  * inside the folder: `page.png` is the Reference and `assets/*` are the assets. The original
  * kept `page.png` in `assets/` too.
  */
-export function sortOriginalDist(paths: string[]): { reference: string | null; assets: string[]; hasInstructions: boolean } {
+export function originalDistFiles(paths: string[]): { reference: string | null; assets: string[]; hasInstructions: boolean } {
   const reference = paths.find((path) => path === "page.png") ?? paths.find((path) => path === "assets/page.png");
   const assets = paths.filter((path) => {
     const name = path.match(/^assets\/([^/]+)$/)?.[1];

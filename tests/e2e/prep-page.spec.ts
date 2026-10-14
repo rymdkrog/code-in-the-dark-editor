@@ -388,6 +388,10 @@ test("the Competition's shake switch and file prefix reach the package", async (
   const prefix = page.getByLabel("File prefix");
   await expect(prefix).toHaveValue("gothenburg-2026");
 
+  await prefix.fill("");
+  await prefix.blur();
+  // Left empty, it follows the Competition name again.
+  await expect(prefix).toHaveValue("gothenburg-2026");
   await shake.uncheck();
   await prefix.fill("gbg26");
   await page.getByRole("button", { name: /^Heat 1/ }).click();

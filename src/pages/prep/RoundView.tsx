@@ -9,8 +9,8 @@ import {
   isOversized,
   packageFileName,
   roundInstructions,
+  originalDistFiles,
   roundStatus,
-  sortOriginalDist,
   statusLabel,
   type Asset,
   type Colour,
@@ -46,23 +46,26 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
       return;
     }
     setProblem(null);
+    setImportNotices([]);
     onChange((round) => ({ ...round, reference }));
   };
 
   const addAssets = async (dropped: File[]) => {
     const { assets, refused } = await readAssets(round.assets, dropped);
     setRefusals(refused);
+    setImportNotices([]);
     onChange((round) => ({ ...round, assets: sortByName([...round.assets, ...assets]) }));
   };
 
-  // Replaces the Reference and the assets, as if the Round started from that challenge.
+  // Replaces the Reference and the assets, as if the Round had started from that folder.
   const importOriginalDist = async (files: File[]) => {
     // Each path starts with the chosen folder's own name.
     const byPath = new Map(files.map((file) => [file.webkitRelativePath.replace(/^[^/]*\//, ""), file]));
-    const sorted = sortOriginalDist([...byPath.keys()]);
+    const sorted = originalDistFiles([...byPath.keys()]);
     const page = sorted.reference === null ? undefined : byPath.get(sorted.reference);
     if (!page) {
       setImportNotices([]);
+      setRefusals([]);
       setProblem("That folder has no page.png. Choose the original editor's dist/ folder.");
       return;
     }
@@ -80,8 +83,11 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
 
   const pickColour = (text: string) => {
     const added = addColour(round, text);
-    setColourProblem("problem" in added ? added.problem : null);
-    if ("problem" in added) return false;
+    if ("problem" in added) {
+      setColourProblem(added.problem);
+      return false;
+    }
+    setColourProblem(null);
     // Added again to the latest Round, in case another change is still on its way.
     onChange((round) => {
       const latest = addColour(round, text);
@@ -232,7 +238,7 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
   );
 }
 
-/** The name badge above the Instructions sheet, rendered by the Core Editor's own code. */
+/** The name badge, for an example Contestant, above the Instructions sheet the Core Editor's own code draws. */
 function ContestantView({ competition, round }: { competition: Competition; round: Round }) {
   const sheet = useRef<HTMLElement>(null);
   const instructions = roundInstructions(competition, round);
@@ -400,7 +406,7 @@ async function readAssets(taken: Asset[], files: File[]) {
   return { assets: await Promise.all(accepted.map((file) => readAsset(file))), refused };
 }
 
-const sortByName = (assets: Asset[]) => assets.sort((a, b) => a.name.localeCompare(b.name));
+const sortByName = (assets: Asset[]) => [...assets].sort((a, b) => a.name.localeCompare(b.name));
 
 const MB = 1024 * 1024;
 
