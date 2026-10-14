@@ -11,7 +11,7 @@ Source: https://github.com/codeinthedark/editor, last commit `04bf2d7` (2016-09-
 ## Features
 
 - **Editor**: ACE HTML mode (highlights embedded CSS/JS), font 20, no print margin, no active-line highlight. Custom theme with constantly pulsing/growing comment and string tokens. **[I]** ACE auto-closing tags/brackets left on.
-- **Combo**: +1 per ACE `insertText` change (paste = 1, deletes don't count). `STREAK_TIMEOUT` 10 s, debounced — 10 s idle resets combo and exits power mode. Shrinking bar under the counter (10 s CSS `scaleX` transition) resets per keystroke; counter "bumps" 0.25 s per change.
+- **Combo**: +1 per ACE `insertText` change; deletes don't count. **[V]** In brace 0.5.1 an insertion over several lines is split into `insertText` changes for the first line's text, the line break and the last line's text (whole lines between are an uncounted `insertLines`), so a multi-line paste counts 2–3 and Enter between nested tags counts 2. `STREAK_TIMEOUT` 10 s, debounced — 10 s idle resets combo and exits power mode. Shrinking bar under the counter (10 s CSS `scaleX` transition) resets per keystroke; counter "bumps" 0.25 s per change.
 - **Exclamations**: every 10 combo, one of 15 random strings ("Super!", "Radical!", "OMG", ":O", …), 1.5 s animation, removed after 3 s.
 - **Power mode**: combo ≥ 200. Adds `body.power-mode`: "POWER MODE!" heading, pulsing background logo (2 s), green → cyan colour scheme.
 - **Particles** (power mode only): throttle 25 ms; 5–12 × 8 px squares at the cursor, colour from ACE token type under the cursor (hard-coded map); vx ∈ [-2.5, 2.5], vy ∈ [-7, -3.5], gravity 0.075, alpha ×0.96 **per frame** (frame-rate dependent), culled at ≤ 0.1; 500-slot ring buffer, full-window canvas sized once at load (never on resize).
