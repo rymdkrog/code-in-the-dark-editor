@@ -388,7 +388,7 @@ button:focus {
   opacity: 0.8;
 }
 
-/* Every dialog: the name and the Reveal. */
+/* Every dialog: the name, the Reveal and the notice that the Round is open in another tab. */
 dialog {
   max-width: 40em;
   padding: 30px;
@@ -402,6 +402,11 @@ dialog {
 
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.75);
+}
+
+/* Nothing in it to focus, so the dialog takes focus itself; its border is enough. */
+.open-elsewhere:focus {
+  outline: none;
 }
 
 .name-dialog-round {

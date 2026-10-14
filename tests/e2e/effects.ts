@@ -16,7 +16,7 @@ export interface Frame {
   squares: DrawnSquare[];
 }
 
-/** A change to the editor's inline style, as the shake makes it. */
+/** A change to the editor's inline transform or margin, as a shake makes it. */
 export interface StyleChange {
   time: number;
   transform: string;
@@ -32,7 +32,7 @@ interface Recording {
 /**
  * Records what Power Mode's effects do, by watching the browser APIs they use: every square
  * filled on a canvas (grouped by animation frame), every animation frame requested, and every
- * change to the editor's inline style.
+ * change to the editor's inline transform or margin.
  *
  * `frameRate` drives animation frames from a timer at that rate instead of the display, to stand
  * in for a 120 Hz screen. `slowMotion` divides the time animation frames report, so particles
@@ -72,16 +72,17 @@ export async function recordEffects(
       document.addEventListener("DOMContentLoaded", () => {
         const editor = document.getElementById("editor")!;
         const parse = document.createElement("div");
+        let last = { transform: "", margin: "" };
         new MutationObserver((records) => {
           // Several changes can arrive together: each one's new style is the next one's old.
           const styles = [...records.slice(1).map((record) => record.oldValue), editor.getAttribute("style")];
           for (const style of styles) {
             parse.setAttribute("style", style ?? "");
-            recording.styleChanges.push({
-              time: performance.now(),
-              transform: parse.style.transform,
-              margin: parse.style.margin,
-            });
+            const { transform, margin } = parse.style;
+            // The editor starts after this, and ACE's own styles aren't a shake.
+            if (transform === last.transform && margin === last.margin) continue;
+            last = { transform, margin };
+            recording.styleChanges.push({ time: performance.now(), transform, margin });
           }
         }).observe(editor, { attributes: true, attributeFilter: ["style"], attributeOldValue: true });
       });

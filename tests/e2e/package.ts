@@ -25,6 +25,9 @@ export const test = base.extend<{ gate: void }>({
 /** Opens a Round package, giving a name if this browser doesn't know one yet. */
 export async function openPackage(page: Page, file = PRACTICE) {
   await page.goto(pathToFileURL(file).href);
+  // The editor starts once the two-tab guard has answered, which can be after the page loads.
+  const started = page.locator(".name-dialog[open], #editor textarea:focus").first();
+  await expect(started).toBeAttached();
   if (await page.getByRole("dialog").isVisible()) await enterName(page, "Anna");
   // The editor takes focus (back) by itself, so the Contestant can type straight away.
   await expect(page.locator("#editor textarea")).toBeFocused();

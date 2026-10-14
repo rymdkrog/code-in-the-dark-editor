@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { chromium, expect, firefox, webkit, type BrowserContext, type Page } from "@playwright/test";
 import { gateNetwork } from "./no-network-gate.ts";
 import {
@@ -290,6 +291,63 @@ test("every key the editor stores is under the Round id, and other keys are left
   ]);
   expect(await page.evaluate(() => localStorage.getItem("someone-else"))).toBe("theirs");
   expect(await page.evaluate(() => localStorage.getItem("other-round:code"))).toBe("other Round's code");
+});
+
+const OPEN_ELSEWHERE = "This Round is open in another tab";
+
+test("a second tab of the same Round is blocked and never saves", async ({ browserName, context, page }) => {
+  await openPackage(page);
+  await page.keyboard.type("one");
+  const second = await context.newPage();
+  await second.goto(pathToFileURL(PRACTICE).href);
+
+  await expect(second.getByRole("dialog")).toContainText(OPEN_ELSEWHERE);
+  await second.keyboard.type("stale");
+  await page.keyboard.type(" two");
+  // The first tab saves last as it closes; a write from the second tab after that would win.
+  await closeTab(page, browserName);
+  await closeTab(second, browserName);
+  const reopened = await context.newPage();
+  await openPackage(reopened);
+
+  expect(await editorText(reopened)).toBe("one two");
+});
+
+test("another Round in a second tab isn't blocked", async ({ context, page }) => {
+  const heat = makePackage(test.info().outputPath("citd-heat-1.html"), { roundId: "heat-1-a1b2c3", roundName: "Heat 1" });
+  await openPackage(page);
+  const second = await context.newPage();
+
+  await openPackage(second, heat);
+
+  await second.keyboard.type("heat code");
+  expect(await editorText(second)).toBe("heat code");
+});
+
+/** The "leave the page?" questions asked while the page reloads; the gate answers them yes. */
+async function questionsOnReload(page: Page) {
+  const asked: string[] = [];
+  page.on("dialog", (dialog) => asked.push(dialog.type()));
+  await page.reload();
+  return asked;
+}
+
+test("leaving the page asks first", async ({ page }) => {
+  await openPackage(page);
+  await page.keyboard.type("x");
+
+  expect(await questionsOnReload(page)).toEqual(["beforeunload"]);
+});
+
+test("a blocked tab lets you leave without asking", async ({ context, page }) => {
+  await openPackage(page);
+  const second = await context.newPage();
+  await second.goto(pathToFileURL(PRACTICE).href);
+  await expect(second.getByRole("dialog")).toContainText(OPEN_ELSEWHERE);
+  // Browsers only ask on a page the person has used.
+  await second.keyboard.type("x");
+
+  expect(await questionsOnReload(second)).toEqual([]);
 });
 
 const STORAGE_FAILING = "Autosave isn't working — download a backup";

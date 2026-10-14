@@ -10,10 +10,18 @@ import { startParticles } from "./particles.ts";
 import { setUpReveal } from "./reveal.ts";
 import { readRound } from "./round.ts";
 import { startShake } from "./shake.ts";
+import { claimRound, showOpenElsewhere } from "./tab-guard.ts";
 
 const round = readRound();
 
-if (round) {
+if (!round) {
+  document.querySelector<HTMLElement>(".bare-template")!.hidden = false;
+  document.querySelector<HTMLElement>(".streak-container")!.hidden = true;
+} else if (!(await claimRound(round.roundId))) {
+  // Before anything starts, so this tab never restores, saves or asks for the name.
+  showOpenElsewhere();
+  document.querySelector<HTMLElement>(".streak-container")!.hidden = true;
+} else {
   const editorElement = document.getElementById("editor")!;
   const editor = startEditor(editorElement);
   const reference = setUpReference(round.reference, editor);
@@ -22,6 +30,11 @@ if (round) {
 
   const storageFailing = document.querySelector<HTMLElement>(".storage-failing")!;
   startAutosave(editor, round.roundId, (working) => (storageFailing.hidden = working));
+  // The original's guard. Browsers put their own words in the question now, not these.
+  window.addEventListener("beforeunload", (event) => {
+    event.preventDefault();
+    event.returnValue = "Hold your horses!";
+  });
   const nameBadge = startNameBadge(round, editor);
   const menu = setUpMenu(round, editor, { contestantName: nameBadge.name });
   // The way to a backup when autosave fails.
@@ -42,7 +55,4 @@ if (round) {
     else if (instructions.isOpen()) instructions.close();
     else reference.toggle();
   });
-} else {
-  document.querySelector<HTMLElement>(".bare-template")!.hidden = false;
-  document.querySelector<HTMLElement>(".streak-container")!.hidden = true;
 }
