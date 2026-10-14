@@ -20,7 +20,7 @@ jobs:
         run: npm run typecheck
       - name: Lint (module boundaries)
         run: npm run lint
-      - name: Unit tests
+      - name: Unit tests and Worker protocol tests
         run: npm test
 
   no-network-gate:
@@ -39,7 +39,7 @@ jobs:
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Build the template and citd-practice.html
         run: npm run build
-      - name: No-network gate and recovery suite
+      - name: No-network gate, recovery suite, prep page and the live Host console flow
         run: npx playwright test --project ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure()

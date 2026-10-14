@@ -11,7 +11,8 @@
   "scripts": {
     "dev": "vite",
     "dev:prep": "vite -c vite.prep.config.ts",
-    "build": "vite build && vite build -c vite.prep.config.ts && node scripts/build-practice.ts",
+    "build": "vite build && vite build -c vite.prep.config.ts && node scripts/build-practice.ts && npm run build:worker-pages",
+    "build:worker-pages": "vite build -c vite.worker.config.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p worker/tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",

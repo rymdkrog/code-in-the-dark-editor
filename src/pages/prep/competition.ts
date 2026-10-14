@@ -1,5 +1,6 @@
 // The Competition the Organizer is preparing, and what a Round package is made from.
 
+import { base64url, isJoinCode, JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, type Claim } from "../../protocol/protocol.ts";
 import type { RoundData } from "../../round-package/round-data.ts";
 
 /** A Reference or an asset, read from the Organizer's file. */
@@ -30,10 +31,23 @@ export interface Round {
   revisions: Revision[];
 }
 
+/** The Audience layer's settings and the credentials minted for it, locally. */
+export interface Audience {
+  enabled: boolean;
+  workerUrl: string;
+  /** Public: phones and the Stage join with it. */
+  joinCode: string;
+  /** Baked into every package, so only Contestants can register presence. */
+  contestantToken: string;
+  /** Only in the Host console link; required for every lifecycle change. */
+  hostSecret: string;
+}
+
 export interface Competition {
   name: string;
   rules: string;
   rounds: Round[];
+  audience: Audience;
 }
 
 const DEFAULT_RULES = [
@@ -48,7 +62,48 @@ const DEFAULT_RULES = [
 export const DATA_URI_LIMIT = 32 * 1024 * 1024;
 
 export function newCompetition(): Competition {
-  return { name: "", rules: DEFAULT_RULES, rounds: [] };
+  return { name: "", rules: DEFAULT_RULES, rounds: [], audience: { enabled: false, workerUrl: "", ...mintCredentials() } };
+}
+
+export type Credentials = Pick<Audience, "joinCode" | "contestantToken" | "hostSecret">;
+
+export function mintCredentials(): Credentials {
+  const code = crypto.getRandomValues(new Uint32Array(JOIN_CODE_LENGTH));
+  return {
+    joinCode: [...code].map((n) => JOIN_CODE_ALPHABET[n % JOIN_CODE_ALPHABET.length]).join(""),
+    contestantToken: longSecret(),
+    hostSecret: longSecret(),
+  };
+}
+
+/** 32 base64url characters: 192 random bits. */
+const longSecret = () => base64url(crypto.getRandomValues(new Uint8Array(24)));
+
+/** Changes the Audience settings. Every package carries them, so every Round's status follows. */
+export const updateAudience = (competition: Competition, change: Partial<Audience>): Competition => ({
+  ...competition,
+  audience: { ...competition.audience, ...change },
+});
+
+/** The Worker's origin, or null when the URL isn't an http(s) URL. */
+export function workerOrigin(workerUrl: string): string | null {
+  const url = URL.canParse(workerUrl.trim()) ? new URL(workerUrl.trim()) : null;
+  return url && (url.protocol === "https:" || url.protocol === "http:") ? url.origin : null;
+}
+
+/** The Worker origin Round packages connect to: the Audience layer is on, with a valid Worker URL. Else none. */
+export const packageWorkerOrigin = ({ audience }: Competition) => (audience.enabled ? workerOrigin(audience.workerUrl) : null);
+
+/** What the Host console link carries. */
+export function claimOf(competition: Competition): Claim {
+  const { joinCode, hostSecret, contestantToken } = competition.audience;
+  return {
+    competitionName: competition.name,
+    joinCode,
+    hostSecret,
+    contestantToken,
+    rounds: competition.rounds.map(({ id, name }) => ({ id, name })),
+  };
 }
 
 /** Adds Heat N after the other Heats, or the Final at the end. A Competition has one Final. */
@@ -248,7 +303,16 @@ export function roundData(
     instructions: { rules: competition.rules, note: "", colours: [] },
     reference: round.reference.dataUri,
     assets: round.assets.map(({ name, width, height, dataUri }) => ({ name, width, height, dataUri })),
+    ...audienceData(competition),
   };
+}
+
+/** The connection details a package carries, or none at all: no Worker URL means pure offline. */
+function audienceData(competition: Competition): Pick<RoundData, "audience"> {
+  const origin = packageWorkerOrigin(competition);
+  if (!origin) return {};
+  const { joinCode, contestantToken } = competition.audience;
+  return { audience: { workerUrl: origin, joinCode, contestantToken } };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
@@ -266,6 +330,15 @@ const isRevision = (value: unknown): value is Revision =>
   typeof value.n === "number" &&
   typeof value.stamp === "string" &&
   typeof value.fingerprint === "string";
+
+const isAudience = (value: unknown): value is Audience =>
+  isRecord(value) &&
+  typeof value.enabled === "boolean" &&
+  typeof value.workerUrl === "string" &&
+  typeof value.joinCode === "string" &&
+  isJoinCode(value.joinCode) &&
+  typeof value.contestantToken === "string" &&
+  typeof value.hostSecret === "string";
 
 const isRound = (value: unknown): value is Round =>
   isRecord(value) &&
@@ -285,7 +358,8 @@ export function parseCompetition(value: unknown): Competition | null {
     typeof value.name !== "string" ||
     !(value.rules === undefined || typeof value.rules === "string") ||
     !Array.isArray(value.rounds) ||
-    !value.rounds.every(isRound)
+    !value.rounds.every(isRound) ||
+    !(value.audience === undefined || isAudience(value.audience))
   ) {
     return null;
   }
@@ -293,9 +367,13 @@ export function parseCompetition(value: unknown): Competition | null {
   return { ...newCompetition(), ...value } as Competition;
 }
 
-/** Nothing would be lost by replacing it: it's just as a new Competition starts. */
-export const isUntouched = (competition: Competition) =>
-  !competition.rounds.length && JSON.stringify(competition) === JSON.stringify(newCompetition());
+/** Nothing would be lost by replacing it: it's just as a new Competition starts, bar its fresh credentials. */
+export function isUntouched(competition: Competition): boolean {
+  const { joinCode, contestantToken, hostSecret } = competition.audience;
+  const fresh = newCompetition();
+  const untouched = { ...fresh, audience: { ...fresh.audience, joinCode, contestantToken, hostSecret } };
+  return !competition.rounds.length && JSON.stringify(competition) === JSON.stringify(untouched);
+}
 
 const FILE_FORMAT = "citd-competition";
 

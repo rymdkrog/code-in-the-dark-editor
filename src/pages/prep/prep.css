@@ -124,3 +124,34 @@ ul.notices { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; f
   font: 13px/1.5 ui-monospace, Menlo, monospace; min-height: 150px; padding: 7px 9px;
   background: #0003; border: 1px solid var(--line); border-radius: 7px;
 }
+.field input {
+  font-weight: 400; padding: 7px 9px; background: #0003; border: 1px solid var(--line); border-radius: 7px;
+}
+
+/* Audience pane */
+.toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+table.credentials { border-collapse: collapse; font-size: 14px; }
+table.credentials th, table.credentials td { padding: 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+table.credentials th { text-align: left; font-weight: 600; padding-right: 18px; width: 190px; }
+table.credentials th .dim { display: block; font-weight: 400; font-size: 12px; }
+table.credentials td { word-break: break-all; }
+.join-code { font-size: 20px; letter-spacing: .15em; }
+.links { display: grid; gap: 14px; font-size: 14px; }
+.link-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.link-row a { color: #8fb0ff; font-size: 13px; }
+.small-button { background: #ffffff10; border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; font-size: 13px; }
+.link-button { background: none; border: 0; padding: 0; color: #8fb0ff; text-decoration: underline; font-size: 13px; }
+.link-button.danger { color: var(--problem); }
+
+dialog {
+  background: var(--panel); color: var(--text); border: 1px solid #ffffff22; border-radius: 12px;
+  padding: 18px 20px; width: min(440px, 92vw);
+}
+dialog::backdrop { background: #0008; }
+dialog h3 { margin: 0 0 8px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }
+dialog p { margin: 0 0 16px; color: #b7b7c2; }
+dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 0; }
+dialog menu button { background: #ffffff10; border: 1px solid var(--line); border-radius: 8px; padding: 7px 13px; font-weight: 600; }
+dialog menu button.danger { background: #ff8a8022; border-color: #ff8a8088; color: var(--problem); }
+
+aside .version { padding: 12px 10px 0; color: var(--dim); font-size: 11px; }

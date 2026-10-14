@@ -1,44 +1,8 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { expect, test, type Browser, type Download, type Locator, type Page, type TestInfo } from "@playwright/test";
-import type { RoundData } from "../../src/round-package/round-data.ts";
-import { gateNetwork } from "./no-network-gate.ts";
-
-const fixture = (file: string) => fileURLToPath(new URL(`../../fixtures/practice/${file}`, import.meta.url));
-const REFERENCE = fixture("reference.png");
+import { expect, test, type Download, type Page } from "@playwright/test";
+import { downloadFrom, exportRound, fixture, newRound, openPackage, REFERENCE } from "./prep.ts";
 
 const pngDataUri = (path: string) => `data:image/png;base64,${readFileSync(path).toString("base64")}`;
-
-let downloads = 0;
-
-/** Clicks a button and keeps the file it downloads, in a folder of its own. */
-async function downloadFrom(button: Locator, testInfo: TestInfo) {
-  const [download] = await Promise.all([button.page().waitForEvent("download"), button.click()]);
-  const path = testInfo.outputPath(`download-${++downloads}`, download.suggestedFilename());
-  await download.saveAs(path);
-  return { fileName: download.suggestedFilename(), path };
-}
-
-/** Clicks Export and keeps the Round package it downloads. */
-const exportRound = (page: Page, testInfo: TestInfo) =>
-  downloadFrom(page.getByRole("button", { name: /^(Re-)?[Ee]xport$/ }), testInfo);
-
-/** Opens a Round package from file://, offline and behind the no-network gate. */
-async function openPackage(browser: Browser, path: string) {
-  const context = await browser.newContext();
-  const check = await gateNetwork(context);
-  const page = await context.newPage();
-  await page.goto(pathToFileURL(path).href);
-  const nameDialog = page.getByRole("dialog");
-  await nameDialog.getByRole("textbox").fill("Anna");
-  await page.keyboard.press("Enter");
-  await expect(nameDialog).toBeHidden();
-  await expect(page.locator("#editor textarea")).toBeFocused();
-  const round = await page.evaluate(
-    () => JSON.parse(document.getElementById("round")!.textContent!) as RoundData,
-  );
-  return { page, round, close: async () => (check(), await context.close()) };
-}
 
 /** Drops a file onto an element, the way dragging it from the desktop does. */
 async function dropFile(page: Page, selector: string, path: string, type: string) {
@@ -53,12 +17,6 @@ async function dropFile(page: Page, selector: string, path: string, type: string
   );
   await page.dispatchEvent(selector, "dragover", { dataTransfer });
   await page.dispatchEvent(selector, "drop", { dataTransfer });
-}
-
-async function newRound(page: Page) {
-  await page.goto("/");
-  await page.getByLabel("Competition name").fill("Gothenburg 2026");
-  await page.getByRole("button", { name: "+ Heat" }).click();
 }
 
 test("dropping a Reference onto the Round shows it full size", async ({ page }) => {

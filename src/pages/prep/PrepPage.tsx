@@ -1,5 +1,8 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { fillTemplate } from "../../round-package/fill-template.ts";
+import { VersionFooter } from "../shared.tsx";
+import { EDITOR_VERSION } from "../version.ts";
+import { AudiencePane } from "./AudiencePane.tsx";
 import {
   addRound,
   changedRounds,
@@ -7,14 +10,18 @@ import {
   competitionFileName,
   isUntouched,
   fileNameClash,
+  mintCredentials,
   mintRoundId,
   newCompetition,
   nextRevision,
+  packageWorkerOrigin,
   roundData,
   roundStatus,
   packageFileName,
   parseCompetitionFile,
+  updateAudience,
   updateRound,
+  type Audience,
   type Competition,
   type Revision,
   type Round,
@@ -23,14 +30,16 @@ import { download, fetchTemplate } from "./files.ts";
 import { RoundView, StatusLabel } from "./RoundView.tsx";
 import { loadCompetition, saveCompetition } from "./store.ts";
 
-declare const __EDITOR_VERSION__: string;
+/** What the main area shows: a Competition-wide pane or one Round. */
+type Pane = { kind: "competition" } | { kind: "audience" } | { kind: "round"; id: string };
 
 type Action =
   | { type: "rename-competition"; name: string }
   | { type: "set-rules"; rules: string }
   | { type: "add-round"; kind: Round["kind"]; id: string }
   | { type: "change-round"; id: string; change: (round: Round) => Round }
-  | { type: "replace"; competition: Competition };
+  | { type: "replace"; competition: Competition }
+  | { type: "change-audience"; change: Partial<Audience> };
 
 function reducer(competition: Competition, action: Action): Competition {
   switch (action.type) {
@@ -44,16 +53,17 @@ function reducer(competition: Competition, action: Action): Competition {
       return updateRound(competition, action.id, action.change);
     case "replace":
       return action.competition;
+    case "change-audience":
+      return updateAudience(competition, action.change);
   }
 }
 
 export function PrepPage() {
   const [competition, dispatch] = useReducer(reducer, undefined, newCompetition);
-  // The Round on show, or null for the Competition pane.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pane, setPane] = useState<Pane>({ kind: "competition" });
   const template = useTemplate();
   const storage = useBrowserStorage(competition, (stored) => dispatch({ type: "replace", competition: stored }));
-  const round = competition.rounds.find((candidate) => candidate.id === selectedId);
+  const round = pane.kind === "round" ? competition.rounds.find((candidate) => candidate.id === pane.id) : undefined;
   const hasFinal = competition.rounds.some((candidate) => candidate.kind === "final");
   // A Competition the Organizer is opening or starting, while they're offered to save this one first.
   const [replacement, setReplacement] = useState<Competition | null>(null);
@@ -62,7 +72,7 @@ export function PrepPage() {
   const add = (kind: Round["kind"]) => {
     const id = mintRoundId();
     dispatch({ type: "add-round", kind, id });
-    setSelectedId(id);
+    setPane({ kind: "round", id });
   };
 
   const changed = changedRounds(competition);
@@ -73,7 +83,7 @@ export function PrepPage() {
     const now = new Date();
     for (const round of rounds) {
       const revision = nextRevision(competition, round, now);
-      const html = fillTemplate(template, roundData(competition, round, revision, __EDITOR_VERSION__));
+      const html = fillTemplate(template, roundData(competition, round, revision, EDITOR_VERSION));
       download(packageFileName(competition, round), html);
       dispatch({ type: "change-round", id: round.id, change: recordRevision(revision) });
     }
@@ -83,7 +93,7 @@ export function PrepPage() {
 
   const replace = (next: Competition) => {
     dispatch({ type: "replace", competition: next });
-    setSelectedId(null);
+    setPane({ kind: "competition" });
     setReplacement(null);
   };
   // Replacing loses the Competition in this browser, so offer to save it first, unless it's untouched.
@@ -113,18 +123,27 @@ export function PrepPage() {
           <span className="dim">Organizer prep</span>
         </label>
         <button
-          className={`nav ${selectedId === null ? "on" : ""}`}
-          onClick={() => setSelectedId(null)}
+          className={`nav ${pane.kind === "competition" ? "on" : ""}`}
+          onClick={() => setPane({ kind: "competition" })}
         >
           <span>⚙ Competition</span>
           <span className="sub">rules</span>
+        </button>
+        <button
+          className={`nav ${pane.kind === "audience" ? "on" : ""}`}
+          onClick={() => setPane({ kind: "audience" })}
+        >
+          <span>📣 Audience</span>
+          <span className="sub">
+            {packageWorkerOrigin(competition) ? `on · Join code ${competition.audience.joinCode}` : "off: packages are offline"}
+          </span>
         </button>
         <div className="group">Rounds</div>
         {competition.rounds.map((candidate) => (
           <button
             key={candidate.id}
-            className={`nav ${selectedId === candidate.id ? "on" : ""}`}
-            onClick={() => setSelectedId(candidate.id)}
+            className={`nav ${round?.id === candidate.id ? "on" : ""}`}
+            onClick={() => setPane({ kind: "round", id: candidate.id })}
           >
             <span>{candidate.name || <i>unnamed</i>}</span>
             <span className="sub">
@@ -182,6 +201,7 @@ export function PrepPage() {
             <p className="dim">{storage === "saved" ? "Saved in this browser" : "Saving…"}</p>
           )}
         </div>
+        <VersionFooter className="version" />
       </aside>
       <main>
         {template instanceof Error && <p className="problem">{template.message}</p>}
@@ -193,6 +213,12 @@ export function PrepPage() {
             templateSize={typeof template === "string" ? template.length : null}
             onChange={(change) => dispatch({ type: "change-round", id: round.id, change })}
             onExport={() => exportRounds([round])}
+          />
+        ) : pane.kind === "audience" ? (
+          <AudiencePane
+            competition={competition}
+            onChange={(change) => dispatch({ type: "change-audience", change })}
+            onMint={() => dispatch({ type: "change-audience", change: mintCredentials() })}
           />
         ) : (
           <section className="pane">

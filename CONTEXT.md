@@ -97,3 +97,18 @@ _Avoid_: Projector view, dashboard, scoreboard
 **Join code**:
 The short public code the Audience uses to join a Competition; one code covers every Round of the Competition.
 _Avoid_: Session code, PIN, room
+
+**Host console**:
+The page the Host runs a Competition from, opened from a private link that carries the claim.
+_Avoid_: Admin panel, dashboard
+
+**Host secret**:
+The long secret, minted by the prep page, that a Competition's Join code is bound to when it is claimed; every lifecycle change needs it.
+_Avoid_: Password, admin token
+
+**Contestant token**:
+The long secret baked into every Round package of a Competition, so only Contestants can register presence.
+
+**Organizer key**:
+The secret set on a Worker that a Host types to claim a Competition on it; nothing stores it.
+_Avoid_: API key, master password

@@ -1,0 +1,62 @@
+/* The Control desk layout from the Stage/Host prototype (Host variant A). */
+:root {
+  --bg: #16171b;
+  --panel: #1f2026;
+  --line: #ffffff14;
+  --text: #e9e9ee;
+  --muted: #9a9aa5;
+  --accent: #ff3e8a;
+  --ok: #43d17a;
+  --problem: #ff8a82;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.host { min-height: 100vh; display: flex; flex-direction: column; }
+.btn { border: 1px solid #ffffff26; background: #2a2b33; border-radius: 8px; padding: 7px 13px; font-weight: 600; }
+.btn:hover { border-color: #ffffff55; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.ghost { background: transparent; }
+.btn.sm { padding: 3px 9px; font-size: 12px; }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #ffffff14; color: #ccc; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); vertical-align: middle; }
+.dot.off { background: #666; }
+
+/* Claim screen */
+.claim { width: min(460px, calc(100vw - 32px)); margin: 60px auto 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+.claim h2 { margin: 0 0 4px; }
+.claim dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0; font-size: 13px; }
+.claim dt { color: var(--muted); }
+.claim dd { margin: 0; overflow-wrap: anywhere; }
+.claim label { display: block; font-weight: 600; }
+.claim input { display: block; width: 100%; background: #111216; border: 1px solid #ffffff22; border-radius: 8px; padding: 9px 11px; margin: 6px 0 12px; font-weight: 400; }
+.claim .err { color: var(--problem); font-size: 13px; margin: -6px 0 10px; }
+
+/* Control desk */
+.offline-banner { position: sticky; top: 0; z-index: 5; background: #5a2a00; color: #ffd6a3; padding: 8px 14px; font-weight: 600; font-size: 13px; }
+.top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: #1a1b20; }
+.top .brand { font-weight: 800; }
+.top .sp { flex: 1; }
+.top .code { color: var(--text); letter-spacing: .08em; }
+.body { flex: 1; display: grid; grid-template-columns: 230px 1fr; }
+.rail { border-right: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.rail-h { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 12px 6px 4px; }
+.rail-h:first-child { padding-top: 4px; }
+.rail-item { border: 1px solid transparent; border-radius: 8px; padding: 7px 9px; display: grid; gap: 2px; }
+.rail-item.on { background: #ff3e8a1c; border-color: #ff3e8a66; }
+.rail-item small { color: var(--muted); font-size: 12px; }
+main { padding: 18px 22px 100px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
+.head { display: flex; align-items: center; gap: 10px; }
+.head h1 { margin: 0; font-size: 26px; }
+.offline .top button { pointer-events: none; opacity: .35; }
+
+.version { margin-top: auto; padding: 16px 6px 8px; color: #6d6d78; font-size: 11px; }
+.host > .version { text-align: center; }

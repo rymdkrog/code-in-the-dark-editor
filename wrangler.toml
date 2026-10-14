@@ -1,5 +1,23 @@
 # The Audience layer. Deploy the closed instance only by hand (`wrangler deploy`),
 # never from CI on merge or tag: a deploy drops every socket mid-Competition.
+# The Organizer key is a Worker secret: `wrangler secret put ORGANIZER_KEY`, or for
+# `wrangler dev`, a line `ORGANIZER_KEY=…` in .dev.vars.
 name = "code-in-the-dark"
 main = "worker/index.ts"
 compatibility_date = "2026-10-01"
+
+# The Host console, Stage and Audience phone pages, built by vite.worker.config.ts.
+[assets]
+directory = "dist/worker"
+
+[build]
+command = "npm run build:worker-pages"
+watch_dir = ["src/pages", "src/protocol", "src/enhancement"]
+
+[[durable_objects.bindings]]
+name = "COMPETITIONS"
+class_name = "Competition"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Competition"]

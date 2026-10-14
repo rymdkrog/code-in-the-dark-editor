@@ -15,15 +15,17 @@ Needs Node 24.
 
 ```sh
 npm install
-npm run build      # dist/core-editor.html (the template), dist/prep/ and dist/citd-practice.html
+npm run build      # dist/core-editor.html (the template), dist/prep/, dist/citd-practice.html and dist/worker/
 npm run dev:prep   # the prep page, locally; it needs the template, so build first
 npm run typecheck
 npm run lint       # includes the module-boundary rules
-npm test           # unit tests
+npm test           # unit tests, and the Worker's protocol tests in workerd
 npx playwright install chromium firefox webkit
-npm run test:e2e   # the no-network gate and the prep page, against dist/; build first
-npm run worker:dev # the Worker under wrangler dev
+npm run test:e2e   # the no-network gate, the prep page and the Host console, against dist/; build first
+npm run worker:dev # the Worker and its pages (Host console, Stage, Audience phone) under wrangler dev
 ```
+
+The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, put `ORGANIZER_KEY=…` in `.dev.vars`; for a deployed Worker, run `npx wrangler secret put ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally) and open the Host console link.
 
 Double-click `dist/citd-practice.html` to try the editor. `scripts/make-practice-fixture.ts` regenerates the practice Reference and asset from their sources in `fixtures/practice/`.
 
