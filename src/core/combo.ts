@@ -25,8 +25,18 @@ function insertionWorth(lines: string[]) {
  */
 const flushStyles = (element: HTMLElement) => void getComputedStyle(element).transform;
 
-/** Counts the Combo from the editor's insertions and enters Power Mode, as the original does. */
-export function startCombo(editor: Ace.Editor) {
+/** The Combo as Power Mode's effects read it. */
+export interface Combo {
+  count(): number;
+  isPowerMode(): boolean;
+  powerModeThreshold: number;
+}
+
+/**
+ * Counts the Combo from the editor's insertions and enters Power Mode, as the original does.
+ * Listeners added to the editor's changes after this one see the Combo with the change counted.
+ */
+export function startCombo(editor: Ace.Editor): Combo {
   const counter = document.querySelector<HTMLElement>(".streak-container .counter")!;
   const bar = document.querySelector<HTMLElement>(".streak-container .bar")!;
   const exclamations = document.querySelector<HTMLElement>(".streak-container .exclamations")!;
@@ -77,4 +87,10 @@ export function startCombo(editor: Ace.Editor) {
     clearTimeout(endTimer);
     endTimer = setTimeout(end, COMBO_TIMEOUT);
   });
+
+  return {
+    count: () => combo,
+    isPowerMode: () => combo >= POWER_MODE_ACTIVATION_THRESHOLD,
+    powerModeThreshold: POWER_MODE_ACTIVATION_THRESHOLD,
+  };
 }

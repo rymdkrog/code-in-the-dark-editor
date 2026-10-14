@@ -50,6 +50,15 @@ body.power-mode .background {
   animation: background-power 2s infinite both;
 }
 
+/* Power Mode's particles, over the whole window. */
+.canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
 /* The original's overrides of vibrant_ink, with pulsing comments and strings. */
 #editor {
   position: absolute;

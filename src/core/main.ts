@@ -5,12 +5,15 @@ import { startEditor } from "./editor.ts";
 import { setUpInstructions } from "./instructions.ts";
 import { startNameBadge } from "./name.ts";
 import { setUpReference } from "./reference.ts";
+import { startParticles } from "./particles.ts";
 import { readRound } from "./round.ts";
+import { startShake } from "./shake.ts";
 
 const round = readRound();
 
 if (round) {
-  const editor = startEditor(document.getElementById("editor")!);
+  const editorElement = document.getElementById("editor")!;
+  const editor = startEditor(editorElement);
   const reference = setUpReference(round.reference, editor);
   const instructions = setUpInstructions(round, editor);
 
@@ -27,7 +30,9 @@ if (round) {
   startAutosave(editor, round.roundId, (working) => (storageFailing.hidden = working));
   startNameBadge(round, editor);
   // Last: as in the original, code put in the editor before this doesn't count to the Combo.
-  startCombo(editor);
+  const combo = startCombo(editor);
+  startParticles(editor, combo);
+  if (round.shake) startShake(editor, editorElement, combo);
 } else {
   document.querySelector<HTMLElement>(".bare-template")!.hidden = false;
   document.querySelector<HTMLElement>(".streak-container")!.hidden = true;

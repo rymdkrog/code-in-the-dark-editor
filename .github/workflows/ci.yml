@@ -5,6 +5,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
 
 jobs:
   check:
@@ -45,5 +46,34 @@ jobs:
         if: failure()
         with:
           name: playwright-report-${{ matrix.browser }}
+          path: playwright-report/
+          retention-days: 14
+
+  # Release tags only. Timed in Chromium and Firefox; WebKit checks only that no keystroke is lost.
+  input-lag-budget:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Build the template and citd-practice.html
+        run: npm run build
+      - name: Input-lag budget
+        run: npx playwright test tests/e2e/input-lag-budget.spec.ts --project ${{ matrix.browser }}
+        env:
+          LAG_BUDGET: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: input-lag-${{ matrix.browser }}
           path: playwright-report/
           retention-days: 14
