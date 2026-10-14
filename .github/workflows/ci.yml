@@ -5,7 +5,8 @@ on:
   pull_request:
   push:
     branches: [main]
-    tags: ["v*"]
+  # Release tags: release.yml runs these checks, then publishes.
+  workflow_call:
 
 jobs:
   check:

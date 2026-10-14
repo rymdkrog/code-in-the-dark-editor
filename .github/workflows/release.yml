@@ -1,0 +1,62 @@
+name: Release
+
+# On a v* tag: every CI check, then a GitHub Release whose only download is citd-practice.html,
+# and the prep page on GitHub Pages. The closed instance of the Worker is never deployed from here.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: The tag matches the lockstep version in package.json
+        run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
+      - name: Build the template, the prep page and citd-practice.html
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: citd-practice
+          path: dist/citd-practice.html
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/prep
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: citd-practice
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" citd-practice.html
+          --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+
+  pages:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

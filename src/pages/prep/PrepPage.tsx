@@ -28,11 +28,12 @@ import {
   type Round,
 } from "./competition.ts";
 import { download, fetchTemplate } from "./files.ts";
+import { HandoutPane } from "./HandoutPane.tsx";
 import { RoundView, StatusLabel } from "./RoundView.tsx";
 import { loadCompetition, saveCompetition } from "./store.ts";
 
 /** What the main area shows: a Competition-wide pane or one Round. */
-type Pane = { kind: "competition" } | { kind: "audience" } | { kind: "round"; id: string };
+type Pane = { kind: "competition" } | { kind: "audience" } | { kind: "handout" } | { kind: "round"; id: string };
 
 type Action =
   | { type: "rename-competition"; name: string }
@@ -72,6 +73,7 @@ export function PrepPage() {
   const storage = useBrowserStorage(competition, (stored) => dispatch({ type: "replace", competition: stored }));
   const round = pane.kind === "round" ? competition.rounds.find((candidate) => candidate.id === pane.id) : undefined;
   const hasFinal = competition.rounds.some((candidate) => candidate.kind === "final");
+  const exported = competition.rounds.filter((candidate) => candidate.revisions.length).length;
   // A Competition the Organizer is opening or starting, while they're offered to save this one first.
   const [replacement, setReplacement] = useState<Competition | null>(null);
   const [openProblem, setOpenProblem] = useState<string | null>(null);
@@ -166,6 +168,17 @@ export function PrepPage() {
           </button>
         </div>
         <button
+          className={`nav ${pane.kind === "handout" ? "on" : ""}`}
+          onClick={() => setPane({ kind: "handout" })}
+        >
+          <span>☑ Hand out & checklist</span>
+          {exported > 0 && (
+            <span className="sub">
+              {exported} of {competition.rounds.length} exported · before the event
+            </span>
+          )}
+        </button>
+        <button
           className="go export-changed"
           onClick={() => exportRounds(changed)}
           disabled={!changed.length || clashing || typeof template !== "string"}
@@ -221,6 +234,8 @@ export function PrepPage() {
             onChange={(change) => dispatch({ type: "change-round", id: round.id, change })}
             onExport={() => exportRounds([round])}
           />
+        ) : pane.kind === "handout" ? (
+          <HandoutPane competition={competition} />
         ) : pane.kind === "audience" ? (
           <AudiencePane
             competition={competition}

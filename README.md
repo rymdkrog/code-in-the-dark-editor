@@ -9,6 +9,37 @@ An alternative take on the [Code in the Dark editor](https://github.com/codeinth
 
 Early days: the first tracer builds a practice Round package you can type in. The way forward is charted as a wayfinder map on this repo's issues (label `wayfinder:map`). Domain vocabulary lives in [`CONTEXT.md`](./CONTEXT.md).
 
+## Handing out Round packages
+
+The prep page exports one Round package per Round. Send each file however suits your venue: USB stick, AirDrop or a chat link. Tell Contestants: **open it where it lands, and don't move it.** Give the Final only to finalists.
+
+### Organizer pre-event checklist
+
+The prep page's Hand out & checklist pane shows the same list.
+
+- **Ahead of the day**
+  - Don't deploy the Worker from the day before.
+  - Optional: send `citd-practice.html` with the invitation, so Contestants can try their own laptops.
+- **Per laptop, before each Heat**
+  - Open the Round package where it landed (don't move it), in a normal window, not a private one.
+  - Enter the name and check the badge shows the right Round.
+  - Type a little. Check there's no autosave icon, and that Esc shows the Reference.
+  - Run Reset Round.
+  - Go fullscreen, turn on Do Not Disturb, disable sleep and plug in power.
+- **If Enhancements are on**
+  - Every seat is on the Host console's Roster, with no stale-Revision flags.
+  - The Competition file is loaded on the Stage machine.
+- **The room**
+  - Contestants can see the Stage clock from their seats, or a second display faces them.
+- **Spare laptop**
+  - Every Round package opened and tested on it.
+
+## Releases
+
+Pushing a `v*` tag (`v2.x.y`, matching `version` in `package.json`) runs every CI check, then publishes a GitHub Release whose only download is `citd-practice.html` and publishes the prep page to GitHub Pages. Every built file carries `version+shortsha`.
+
+The Pages deploy needs two repository settings, once: **Settings → Pages → Source: GitHub Actions**, and a `v*` tag rule under **Settings → Environments → github-pages → Deployment branches and tags** (by default it accepts only `main`).
+
 ## Development
 
 Needs Node 24.

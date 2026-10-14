@@ -424,3 +424,34 @@ test("an original dist/ folder imports as the Round's Reference and assets", asy
   await expect(assets.getByRole("row", { name: /moon\.png/ })).toContainText("240 × 240");
   await expect(page.getByText(/instructions\.html isn't imported/)).toBeVisible();
 });
+
+test("the Hand out pane lists every Round's file with its status, the handout note and the checklist", async ({
+  page,
+}, testInfo) => {
+  await page.clock.setFixedTime(new Date("2026-10-12T14:03:30Z"));
+  await newRound(page);
+  await page.getByRole("button", { name: "+ Heat" }).click();
+  await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
+  await page.getByRole("button", { name: "+ Final" }).click();
+  await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
+  await exportRound(page, testInfo);
+
+  await page.getByRole("button", { name: /Hand out & checklist/ }).click();
+  await expect(page.getByRole("button", { name: /Hand out & checklist/ })).toContainText("1 of 3 exported");
+
+  const files = page.getByRole("table", { name: "Round packages" });
+  await expect(files.getByRole("row")).toHaveCount(3);
+  await expect(files.getByRole("row", { name: /citd-gothenburg-2026-heat-1\.html/ })).toContainText(
+    /problem.*It has no Reference yet\./,
+  );
+  await expect(files.getByRole("row", { name: /citd-gothenburg-2026-heat-2\.html/ })).toContainText("not exported");
+  await expect(files.getByRole("row", { name: /citd-gothenburg-2026-final\.html/ })).toContainText(
+    /Rev 1 exported.*12 Oct 14:03/,
+  );
+  await expect(page.getByText(/open it where it lands, and don't move it/)).toBeVisible();
+  await expect(page.getByText(/Give the Final only to finalists/)).toBeVisible();
+  const checklist = page.getByRole("list", { name: "Organizer pre-event checklist" });
+  await expect(checklist.getByRole("checkbox")).toHaveCount(11);
+  await expect(checklist).toContainText("Run Reset Round.");
+  await expect(checklist).toContainText("Every Round package opened and tested on it.");
+});

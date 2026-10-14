@@ -318,9 +318,12 @@ export const changedRounds = (competition: Competition): Round[] =>
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "Rev 3 · 12 Oct 14:03", in UTC like the stamp. */
-export function formatRevision({ n, stamp }: Revision): string {
+export const formatRevision = (revision: Revision) => `Rev ${revision.n} · ${formatExportTime(revision)}`;
+
+/** "12 Oct 14:03": when a Revision was exported, in UTC like the stamp. */
+export function formatExportTime({ stamp }: Revision): string {
   const [, month, day, hour, minute] = stamp.match(/-\d{4}(\d\d)(\d\d)(\d\d)(\d\d)$/)!;
-  return `Rev ${n} · ${Number(day)} ${MONTHS[Number(month) - 1]} ${hour}:${minute}`;
+  return `${Number(day)} ${MONTHS[Number(month) - 1]} ${hour}:${minute}`;
 }
 
 /** What the Instructions overlay shows for a Round. */
