@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lobster">
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Pacifico");
+  @font-face { font-family: Remote; src: url(https://example.com/remote.woff2) format("woff2"); }
+  body { margin: 0; font-family: Remote, Lobster, Pacifico, monospace; }
+  .sky { width: 240px; height: 240px; background: url('assets/Moon.PNG') no-repeat; }
+</style>
+</head>
+<body>
+<h1 id="title">Good night</h1>
+<img id="plain" src="moon.png" alt="Moon">
+<img id="dotted" src="./moon.png" alt="Moon, dotted">
+<img id="srcset" srcset="assets/moon.png 1x, ./Moon.png 2x" alt="Moon, srcset">
+<img id="missing" src="missing.png" alt="Missing">
+<div id="sky" class="sky"></div>
+<div id="styled" style="width: 240px; height: 240px; background-image: url(MOON.png)"></div>
+<script>document.getElementById("title").textContent = "JavaScript ran";</script>
+</body>
+</html>

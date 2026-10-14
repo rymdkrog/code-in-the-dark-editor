@@ -38,6 +38,7 @@
   <section class="instructions-panel" aria-label="Instructions" tabindex="-1"></section>
 </div>
 <div class="button-bar" hidden>
+  <button type="button" class="reveal-button">Reveal</button>
   <button type="button" class="instructions-button">Instructions</button>
 </div>
 <div class="storage-failing" role="img" title="Autosave isn't working — download a backup" aria-label="Autosave isn't working — download a backup" hidden>
@@ -46,6 +47,15 @@
     <path d="M8 6v4M8 11.5v1" stroke="currentColor" stroke-width="1.5"/>
   </svg>
 </div>
+<dialog class="reveal-dialog">
+  <form method="dialog">
+    <label>This will show the result of your code. Doing this before the Round is over WILL DISQUALIFY
+      YOU. Are you sure you want to proceed? Type "yes" to confirm.
+      <input name="confirm" autocomplete="off"></label>
+    <button>Reveal</button>
+    <button type="button" class="reveal-dialog-cancel">Cancel</button>
+  </form>
+</dialog>
 <script type="application/json" id="round"></script>
 <script type="module" src="./main.ts"></script>
 </body>

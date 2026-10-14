@@ -25,11 +25,13 @@ function insertionWorth(lines: string[]) {
  */
 const flushStyles = (element: HTMLElement) => void getComputedStyle(element).transform;
 
-/** The Combo as Power Mode's effects read it. */
+/** The Combo as Power Mode's effects read it, and as the Reveal ends it. */
 export interface Combo {
   count(): number;
   isPowerMode(): boolean;
   powerModeThreshold: number;
+  /** Ends the Combo now, and Power Mode with it. */
+  end(): void;
 }
 
 /**
@@ -92,5 +94,9 @@ export function startCombo(editor: Ace.Editor): Combo {
     count: () => combo,
     isPowerMode: () => combo >= POWER_MODE_ACTIVATION_THRESHOLD,
     powerModeThreshold: POWER_MODE_ACTIVATION_THRESHOLD,
+    end() {
+      clearTimeout(endTimer);
+      end();
+    },
   };
 }

@@ -9,7 +9,6 @@ export function setUpInstructions(round: RoundData, editor: { focus(): void }) {
   const panel = overlay.querySelector<HTMLElement>(".instructions-panel")!;
   const button = document.querySelector<HTMLElement>(".instructions-button")!;
   panel.append(...instructionsContent(round));
-  button.closest<HTMLElement>(".button-bar")!.hidden = false;
 
   const close = () => {
     overlay.hidden = true;
