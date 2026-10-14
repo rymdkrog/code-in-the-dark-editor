@@ -21,6 +21,12 @@ export interface Revision {
   fingerprint: string;
 }
 
+/** A colour Contestants are given exactly, as `#RRGGBB`, with an optional label. */
+export interface Colour {
+  hex: string;
+  label: string;
+}
+
 export interface Round {
   /** Random, minted once when the Round is added, and kept across re-exports. */
   id: string;
@@ -28,6 +34,9 @@ export interface Round {
   name: string;
   reference: Asset | null;
   assets: Asset[];
+  /** Round-specific hints, shown below the rules. */
+  note: string;
+  colours: Colour[];
   revisions: Revision[];
 }
 
@@ -46,6 +55,10 @@ export interface Audience {
 export interface Competition {
   name: string;
   rules: string;
+  /** Screen shake in Power Mode. Contestants get no switch of their own. */
+  shake: boolean;
+  /** The file prefix the Organizer typed, or null to derive it from the Competition name. */
+  prefix: string | null;
   rounds: Round[];
   audience: Audience;
 }
@@ -62,7 +75,14 @@ const DEFAULT_RULES = [
 export const DATA_URI_LIMIT = 32 * 1024 * 1024;
 
 export function newCompetition(): Competition {
-  return { name: "", rules: DEFAULT_RULES, rounds: [], audience: { enabled: false, workerUrl: "", ...mintCredentials() } };
+  return {
+    name: "",
+    rules: DEFAULT_RULES,
+    shake: true,
+    prefix: null,
+    rounds: [],
+    audience: { enabled: false, workerUrl: "", ...mintCredentials() },
+  };
 }
 
 export type Credentials = Pick<Audience, "joinCode" | "contestantToken" | "hostSecret">;
@@ -117,6 +137,8 @@ export function addRound(competition: Competition, kind: Round["kind"], id: stri
     name: kind === "final" ? "Final" : `Heat ${heats.length + 1}`,
     reference: null,
     assets: [],
+    note: "",
+    colours: [],
     revisions: [],
   };
   return { ...competition, rounds: kind === "final" ? [...heats, round] : [...heats, round, ...finals] };
@@ -141,16 +163,35 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** What the Competition's file names start with, derived from its name. */
-const filePrefix = (competition: Competition) => slugify(competition.name) || "competition";
+/** The file prefix as the Organizer typed it, or derived from the Competition name. */
+export const filePrefix = (competition: Competition) => competition.prefix ?? slugify(competition.name);
+
+/** What the Competition's file names start with. */
+const fileSlug = (competition: Competition) => slugify(filePrefix(competition)) || "competition";
 
 /** `citd-<prefix>-<round-slug>.html`. */
-export function packageFileName(competition: Competition, round: Round): string {
-  return `citd-${filePrefix(competition)}-${slugify(round.name) || "round"}.html`;
+export function packageFileName(competition: Competition, round: Pick<Round, "name">): string {
+  return `citd-${fileSlug(competition)}-${slugify(round.name) || "round"}.html`;
+}
+
+/** `#RGB` or `#RRGGBB`, the `#` optional, as `#RRGGBB`; null if it's neither. */
+export function normaliseHex(text: string): string | null {
+  const digits = text.trim().replace(/^#/, "");
+  if (!/^([0-9a-f]{3}|[0-9a-f]{6})$/i.test(digits)) return null;
+  const full = digits.length === 3 ? [...digits].map((digit) => digit + digit).join("") : digits;
+  return `#${full.toUpperCase()}`;
+}
+
+/** Adds a colour to the Round's list, or says why it can't. */
+export function addColour(round: Round, text: string): { round: Round } | { problem: string } {
+  const hex = normaliseHex(text);
+  if (!hex) return { problem: `Refused “${text.trim()}”: type a colour as #RGB or #RRGGBB.` };
+  if (round.colours.some((colour) => colour.hex === hex)) return { problem: `Refused ${hex}: it's already in the list.` };
+  return { round: { ...round, colours: [...round.colours, { hex, label: "" }] } };
 }
 
 /** `<prefix>.citd-competition.json`. */
-export const competitionFileName = (competition: Competition) => `${filePrefix(competition)}.citd-competition.json`;
+export const competitionFileName = (competition: Competition) => `${fileSlug(competition)}.citd-competition.json`;
 
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -174,7 +215,7 @@ export const fileBytes = (asset: Asset) =>
 /** Roughly how big a Round's package will be, given the template's size. */
 export function estimatedPackageBytes(competition: Competition, round: Round, templateBytes: number): number {
   const files = round.reference ? [round.reference, ...round.assets] : round.assets;
-  return templateBytes + competition.rules.length + files.reduce((sum, file) => sum + file.dataUri.length, 0);
+  return templateBytes + competition.rules.length + round.note.length + files.reduce((sum, file) => sum + file.dataUri.length, 0);
 }
 
 /** The next Revision of a Round, stamped with the UTC minute of `now`. */
@@ -285,6 +326,14 @@ export function formatRevision({ n, stamp }: Revision): string {
   return `Rev ${n} · ${Number(day)} ${MONTHS[Number(month) - 1]} ${hour}:${minute}`;
 }
 
+/** What the Instructions overlay shows for a Round. */
+export function roundInstructions(competition: Competition, round: Round): Pick<RoundData, "instructions" | "assets"> {
+  return {
+    instructions: { rules: competition.rules, note: round.note, colours: round.colours },
+    assets: round.assets.map(({ name, width, height, dataUri }) => ({ name, width, height, dataUri })),
+  };
+}
+
 /** What the Round package for one Revision of a Round carries in its data slot. */
 export function roundData(
   competition: Competition,
@@ -299,10 +348,9 @@ export function roundData(
     roundId: round.id,
     revision: revision.stamp,
     editorVersion,
-    shake: true,
-    instructions: { rules: competition.rules, note: "", colours: [] },
+    shake: competition.shake,
+    ...roundInstructions(competition, round),
     reference: round.reference.dataUri,
-    assets: round.assets.map(({ name, width, height, dataUri }) => ({ name, width, height, dataUri })),
     ...audienceData(competition),
   };
 }
@@ -340,7 +388,13 @@ const isAudience = (value: unknown): value is Audience =>
   typeof value.contestantToken === "string" &&
   typeof value.hostSecret === "string";
 
-const isRound = (value: unknown): value is Round =>
+const isColour = (value: unknown): value is Colour =>
+  isRecord(value) && typeof value.hex === "string" && typeof value.label === "string";
+
+/** A Round as saved: one saved before the note and colours existed has neither. */
+type SavedRound = Omit<Round, "note" | "colours"> & Partial<Pick<Round, "note" | "colours">>;
+
+const isRound = (value: unknown): value is SavedRound =>
   isRecord(value) &&
   typeof value.id === "string" &&
   (value.kind === "heat" || value.kind === "final") &&
@@ -348,6 +402,8 @@ const isRound = (value: unknown): value is Round =>
   (value.reference === null || isAsset(value.reference)) &&
   Array.isArray(value.assets) &&
   value.assets.every(isAsset) &&
+  (value.note === undefined || typeof value.note === "string") &&
+  (value.colours === undefined || (Array.isArray(value.colours) && value.colours.every(isColour))) &&
   Array.isArray(value.revisions) &&
   value.revisions.every(isRevision);
 
@@ -357,6 +413,8 @@ export function parseCompetition(value: unknown): Competition | null {
     !isRecord(value) ||
     typeof value.name !== "string" ||
     !(value.rules === undefined || typeof value.rules === "string") ||
+    !(value.shake === undefined || typeof value.shake === "boolean") ||
+    !(value.prefix === undefined || value.prefix === null || typeof value.prefix === "string") ||
     !Array.isArray(value.rounds) ||
     !value.rounds.every(isRound) ||
     !(value.audience === undefined || isAudience(value.audience))
@@ -364,7 +422,8 @@ export function parseCompetition(value: unknown): Competition | null {
     return null;
   }
   // Defaults first, so a Competition saved before a setting existed still opens.
-  return { ...newCompetition(), ...value } as Competition;
+  const rounds = value.rounds.map((round) => ({ note: "", colours: [], ...round }));
+  return { ...newCompetition(), ...value, rounds } as Competition;
 }
 
 /** Nothing would be lost by replacing it: it's just as a new Competition starts, bar its fresh credentials. */
@@ -390,4 +449,22 @@ export function parseCompetitionFile(text: string): Competition | null {
     return null;
   }
   return isRecord(file) && file.format === FILE_FORMAT ? parseCompetition(file.competition) : null;
+}
+
+/** What the original editor's build put beside the Reference that isn't an asset. */
+const ORIGINAL_EDITOR_FILES = ["page.png", "instructions.html", "result.html"];
+
+/**
+ * Which files of an original editor's `dist/` folder make up a Round, by each file's path
+ * inside the folder: `page.png` is the Reference and `assets/*` are the assets. The original
+ * kept `page.png` in `assets/` too.
+ */
+export function sortOriginalDist(paths: string[]): { reference: string | null; assets: string[]; hasInstructions: boolean } {
+  const reference = paths.find((path) => path === "page.png") ?? paths.find((path) => path === "assets/page.png");
+  const assets = paths.filter((path) => {
+    const name = path.match(/^assets\/([^/]+)$/)?.[1];
+    return name !== undefined && !name.startsWith(".") && !ORIGINAL_EDITOR_FILES.includes(name);
+  });
+  const hasInstructions = paths.some((path) => path === "instructions.html" || path === "assets/instructions.html");
+  return { reference: reference ?? null, assets, hasInstructions };
 }

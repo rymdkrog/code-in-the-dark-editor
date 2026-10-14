@@ -1,0 +1,36 @@
+/* The Instructions sheet, shared with the prep page's "what the Contestant sees". */
+.instructions-panel {
+  padding: 0 20px 20px;
+  background: white;
+  color: black;
+  font: 14px/1.5 monospace;
+}
+
+.instructions-panel h2 {
+  margin: 1.5em 0 0.5em;
+  font-size: inherit;
+}
+
+.instructions-panel p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.instructions-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instructions-panel .swatch {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.75em;
+  border: 1px solid black;
+  vertical-align: -0.15em;
+}
+
+.instructions-panel .hex {
+  margin-right: 0.75em;
+}

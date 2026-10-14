@@ -155,3 +155,27 @@ dialog menu button { background: #ffffff10; border: 1px solid var(--line); borde
 dialog menu button.danger { background: #ff8a8022; border-color: #ff8a8088; color: var(--problem); }
 
 aside .version { padding: 12px 10px 0; color: var(--dim); font-size: 11px; }
+
+/* Picking a colour from the Reference */
+.reference img { cursor: crosshair; }
+
+.field textarea.note { min-height: 70px; }
+.switch { display: flex; gap: 8px; align-items: baseline; font-weight: 600; font-size: 14px; }
+.switch .dim { font-weight: 400; }
+
+ul.colours { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+ul.colours li { display: flex; align-items: center; gap: 10px; }
+ul.colours .swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid #ffffff40; flex: none; }
+ul.colours input, .colour-input {
+  background: #0003; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-width: 0;
+}
+ul.colours input { flex: 1; }
+.colour-input { width: 180px; }
+
+/* What the Contestant sees: the name badge above the Instructions sheet, scaled down. */
+.contestant-view { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: #0005; }
+.contestant-view .badge {
+  justify-self: start; padding: 8px; background: rgba(58, 147, 100, 0.75); color: white;
+  font: 14px "Press Start 2P", monospace;
+}
+.contestant-view .instructions-panel { max-height: 360px; overflow: auto; border-radius: 4px; }

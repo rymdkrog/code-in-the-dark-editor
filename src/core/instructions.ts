@@ -1,4 +1,5 @@
 import type { RoundData } from "../round-package/round-data.ts";
+import "./instructions.css";
 
 /**
  * The Instructions button and the overlay it toggles. The overlay closes on a click beside
@@ -25,8 +26,11 @@ export function setUpInstructions(round: RoundData, editor: { focus(): void }) {
   return { isOpen: () => !overlay.hidden, close };
 }
 
-// Built from text nodes only: the Organizer's text is never parsed as HTML.
-function instructionsContent({ instructions, assets }: RoundData): HTMLElement[] {
+/**
+ * What the Instructions sheet shows, for the overlay and for the prep page's preview of it.
+ * Built from text nodes only: the Organizer's text is never parsed as HTML.
+ */
+export function instructionsContent({ instructions, assets }: Pick<RoundData, "instructions" | "assets">): HTMLElement[] {
   const content = [heading("Rules"), element("p", "", instructions.rules)];
   if (instructions.note) content.push(heading("Note"), element("p", "", instructions.note));
   if (instructions.colours.length) {
@@ -44,7 +48,8 @@ function instructionsContent({ instructions, assets }: RoundData): HTMLElement[]
   if (assets.length) {
     content.push(
       heading("Assets"),
-      list(assets.map(({ name, width, height }) => [`${name} ${width} × ${height} px`])),
+      // A font has no pixel dimensions.
+      list(assets.map(({ name, width, height }) => [width === null ? name : `${name} ${width} × ${height} px`])),
     );
   }
   return content;

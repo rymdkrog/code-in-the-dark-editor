@@ -289,51 +289,19 @@ button:focus {
   box-sizing: border-box;
 }
 
+/* The sheet's own look is in instructions.css, which the prep page shares. */
 .instructions-panel {
   box-sizing: border-box;
   max-width: 900px;
   height: 600px;
   max-height: calc(100% - 20px);
   margin: 0 auto;
-  padding: 0 20px 20px;
   overflow: auto;
-  background: white;
-  color: black;
-  font: 14px/1.5 monospace;
   cursor: auto;
 }
 
 .instructions-panel:focus {
   outline: none;
-}
-
-.instructions-panel h2 {
-  margin: 1.5em 0 0.5em;
-  font-size: inherit;
-}
-
-.instructions-panel p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.instructions-panel ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.instructions-panel .swatch {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 0.75em;
-  border: 1px solid black;
-  vertical-align: -0.15em;
-}
-
-.instructions-panel .hex {
-  margin-right: 0.75em;
 }
 
 @keyframes pulse {

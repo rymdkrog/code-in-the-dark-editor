@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import { downloadFrom, exportRound, fixture, newRound, openPackage, REFERENCE } from "./prep.ts";
 
@@ -307,4 +307,116 @@ test("an Organizer builds a Competition and exports a Round package that opens f
   // What the package carries is what its Reference thumbnail shows.
   expect(opened.round.reference).toBe(pngDataUri(REFERENCE));
   await opened.close();
+});
+
+test("a Round's note and colours reach the package's Instructions overlay", async ({ page, browser }, testInfo) => {
+  await newRound(page);
+  await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
+  await page.getByLabel("Round note").fill("Nav links don't need hover states.");
+  const colour = page.getByLabel("Add a colour");
+  const colours = page.getByRole("list", { name: "Colours" });
+
+  // Picked from the Reference: the header's coral, then the page's night blue below it.
+  await page.getByRole("img", { name: "Reference" }).click({ position: { x: 5, y: 5 } });
+  await page.getByRole("img", { name: "Reference" }).click({ position: { x: 5, y: 400 } });
+  await colour.fill("#ffe66d");
+  await colour.press("Enter");
+  await colour.fill("4ecdc4");
+  await colour.press("Enter");
+  await colour.fill("#fff");
+  await colour.press("Enter");
+  await expect(colours.getByRole("listitem")).toContainText(["#FF6B6B", "#1B1F3B", "#FFE66D", "#4ECDC4", "#FFFFFF"]);
+  await expect(colour).toHaveValue("");
+
+  await colour.fill("#FF6b6b");
+  await colour.press("Enter");
+  await expect(page.getByText(/Refused #FF6B6B: it's already in the list/)).toBeVisible();
+  await colour.fill("#12");
+  await colour.press("Enter");
+  await expect(page.getByText(/Refused “#12”/)).toBeVisible();
+  await page.getByRole("img", { name: "Reference" }).click({ position: { x: 5, y: 5 } });
+  await expect(colours.getByRole("listitem")).toHaveCount(5);
+
+  await page.getByLabel("Label for #FF6B6B").fill("Lantern");
+  await page.getByLabel("Label for #1B1F3B").fill("Night");
+  await page.getByRole("button", { name: "Remove #FFFFFF" }).click();
+  await expect(colours.getByRole("listitem")).toHaveCount(4);
+
+  const opened = await openPackage(browser, (await exportRound(page, testInfo)).path);
+  expect(opened.round.instructions.note).toBe("Nav links don't need hover states.");
+  expect(opened.round.instructions.colours).toEqual([
+    { hex: "#FF6B6B", label: "Lantern" },
+    { hex: "#1B1F3B", label: "Night" },
+    { hex: "#FFE66D", label: "" },
+    { hex: "#4ECDC4", label: "" },
+  ]);
+  await opened.page.getByRole("button", { name: "Instructions" }).click();
+  const instructions = opened.page.getByRole("region", { name: "Instructions" });
+  await expect(instructions).toContainText("Nav links don't need hover states.");
+  await expect(instructions).toContainText("#FF6B6B Lantern");
+  await expect(instructions).toContainText("#4ECDC4");
+  await opened.close();
+});
+
+test("the Round shows what the Contestant will see: the badge above the instructions", async ({ page }) => {
+  await newRound(page);
+  await page.getByLabel("Add assets").setInputFiles(fixture("assets/moon.png"));
+  await page.getByLabel("Round note").fill("Nav links don't need hover states.");
+  await page.getByLabel("Add a colour").fill("#1b1f3b");
+  await page.getByLabel("Add a colour").press("Enter");
+  await page.getByLabel("Label for #1B1F3B").fill("Night");
+
+  const seen = page.getByRole("region", { name: "What the Contestant sees" });
+  await expect(seen.getByText("Anna · Heat 1")).toBeVisible();
+  const instructions = seen.getByRole("region", { name: "Instructions" });
+  await expect(instructions.getByRole("heading")).toHaveText(["Rules", "Note", "Colours", "Assets"]);
+  await expect(instructions).toContainText("Recreate the Reference using only HTML and CSS.");
+  await expect(instructions).toContainText("Nav links don't need hover states.");
+  await expect(instructions).toContainText("#1B1F3B Night");
+  await expect(instructions).toContainText("moon.png 240 × 240 px");
+
+  await page.getByLabel("Round name").fill("Heat A");
+  await expect(seen.getByText("Anna · Heat A")).toBeVisible();
+});
+
+test("the Competition's shake switch and file prefix reach the package", async ({ page, browser }, testInfo) => {
+  await newRound(page);
+  await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
+  await page.getByRole("button", { name: /^⚙ Competition/ }).click();
+  const shake = page.getByLabel("Screen shake");
+  await expect(shake).toBeChecked();
+  const prefix = page.getByLabel("File prefix");
+  await expect(prefix).toHaveValue("gothenburg-2026");
+
+  await shake.uncheck();
+  await prefix.fill("gbg26");
+  await page.getByRole("button", { name: /^Heat 1/ }).click();
+  const exported = await exportRound(page, testInfo);
+
+  expect(exported.fileName).toBe("citd-gbg26-heat-1.html");
+  const opened = await openPackage(browser, exported.path);
+  expect(opened.round.shake).toBe(false);
+  await opened.close();
+});
+
+test("an original dist/ folder imports as the Round's Reference and assets", async ({ page }, testInfo) => {
+  // The original editor's build: editor.html, and everything else in assets/.
+  const dist = testInfo.outputPath("dist");
+  mkdirSync(`${dist}/assets`, { recursive: true });
+  writeFileSync(`${dist}/editor.html`, "<!doctype html><title>Code in the Dark</title>");
+  copyFileSync(REFERENCE, `${dist}/assets/page.png`);
+  copyFileSync(fixture("assets/moon.png"), `${dist}/assets/moon.png`);
+  writeFileSync(`${dist}/assets/instructions.html`, "<p>Use moon.png</p>");
+  writeFileSync(`${dist}/assets/result.html`, "<!doctype html>");
+  await newRound(page);
+
+  await page.getByLabel("Import original dist/ folder").setInputFiles(dist);
+
+  const reference = page.getByRole("img", { name: "Reference" });
+  await expect(reference).toBeVisible();
+  expect(await reference.evaluate((image: HTMLImageElement) => image.src)).toBe(pngDataUri(REFERENCE));
+  const assets = page.getByRole("table", { name: "Assets" });
+  await expect(assets.getByRole("row")).toHaveCount(1);
+  await expect(assets.getByRole("row", { name: /moon\.png/ })).toContainText("240 × 240");
+  await expect(page.getByText(/instructions\.html isn't imported/)).toBeVisible();
 });

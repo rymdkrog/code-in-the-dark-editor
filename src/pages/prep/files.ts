@@ -3,15 +3,35 @@
 
 import type { Asset } from "./competition.ts";
 
+// For files the browser gives no type, as Firefox does for those in a chosen folder.
+const TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+};
+
+/** The file's type, or the one its extension implies when the browser gives none. */
+export const fileType = (file: File) =>
+  file.type || TYPES[file.name.split(".").pop()!.toLowerCase()] || "application/octet-stream";
+
 /** Reads a file as an asset, with its pixel dimensions if the browser can decode it as an image. */
 export async function readAsset(file: File): Promise<Asset> {
+  const type = fileType(file);
   const dataUri = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(file.slice(0, file.size, type));
   });
-  const size = file.type.startsWith("image/") ? await imageSize(dataUri) : null;
+  const size = type.startsWith("image/") ? await imageSize(dataUri) : null;
   return { name: file.name, dataUri, width: size?.width ?? null, height: size?.height ?? null };
 }
 
@@ -41,4 +61,14 @@ export function download(fileName: string, content: string, type = "text/html"):
   link.remove();
   // Revoking straight away can cancel the download in some browsers.
   setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+}
+
+/** The colour of one pixel of an image, as `#RRGGBB`. */
+export function pixelColour(image: HTMLImageElement, x: number, y: number): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d")!;
+  context.drawImage(image, x, y, 1, 1, 0, 0, 1, 1);
+  const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+  return `#${[red!, green!, blue!].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }

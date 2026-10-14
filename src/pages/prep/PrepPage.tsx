@@ -10,6 +10,7 @@ import {
   competitionFileName,
   isUntouched,
   fileNameClash,
+  filePrefix,
   mintCredentials,
   mintRoundId,
   newCompetition,
@@ -36,6 +37,8 @@ type Pane = { kind: "competition" } | { kind: "audience" } | { kind: "round"; id
 type Action =
   | { type: "rename-competition"; name: string }
   | { type: "set-rules"; rules: string }
+  | { type: "set-shake"; shake: boolean }
+  | { type: "set-prefix"; prefix: string }
   | { type: "add-round"; kind: Round["kind"]; id: string }
   | { type: "change-round"; id: string; change: (round: Round) => Round }
   | { type: "replace"; competition: Competition }
@@ -47,6 +50,10 @@ function reducer(competition: Competition, action: Action): Competition {
       return { ...competition, name: action.name };
     case "set-rules":
       return { ...competition, rules: action.rules };
+    case "set-shake":
+      return { ...competition, shake: action.shake };
+    case "set-prefix":
+      return { ...competition, prefix: action.prefix };
     case "add-round":
       return addRound(competition, action.kind, action.id);
     case "change-round":
@@ -127,7 +134,7 @@ export function PrepPage() {
           onClick={() => setPane({ kind: "competition" })}
         >
           <span>⚙ Competition</span>
-          <span className="sub">rules</span>
+          <span className="sub">rules, shake, file prefix</span>
         </button>
         <button
           className={`nav ${pane.kind === "audience" ? "on" : ""}`}
@@ -229,6 +236,27 @@ export function PrepPage() {
               <textarea
                 value={competition.rules}
                 onChange={(event) => dispatch({ type: "set-rules", rules: event.target.value })}
+              />
+            </label>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={competition.shake}
+                onChange={(event) => dispatch({ type: "set-shake", shake: event.target.checked })}
+              />
+              Screen shake
+              <span className="dim"> — in Power Mode, for every Contestant. Contestants can't turn it on or off.</span>
+            </label>
+            <label className="field">
+              File prefix
+              <span className="dim">
+                {" "}
+                — each Round package is named <code>{packageFileName(competition, { name: "Heat 1" })}</code>
+              </span>
+              <input
+                className="mono"
+                value={filePrefix(competition)}
+                onChange={(event) => dispatch({ type: "set-prefix", prefix: event.target.value })}
               />
             </label>
           </section>
