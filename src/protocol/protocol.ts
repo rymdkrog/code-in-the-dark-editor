@@ -1,6 +1,8 @@
 // The Audience layer's wire protocol, shared by the Worker, the Enhancement and the pages.
 // Every message is JSON and carries the protocol version `v`.
 
+import { isNewerRevision } from "../round-package/revision.ts";
+
 /** Bump only on breaking changes. The Worker accepts this and the previous version. */
 export const V = 1;
 
@@ -170,14 +172,8 @@ export interface Roster {
   newest: string | null;
 }
 
-/** The counter in a Revision: 3 for `3-202610121403`. */
-export const revisionNumber = (revision: string) => Number(/^\d+/.exec(revision)?.[0] ?? 0);
-
-/** Whether Revision `a` is newer than `b`: a later counter, or the same counter exported later. */
-export function isNewerRevision(a: string, b: string): boolean {
-  const [na, nb] = [revisionNumber(a), revisionNumber(b)];
-  return na !== nb ? na > nb : a > b;
-}
+/** The Roster of a Round nobody has opened yet. */
+export const EMPTY_ROSTER: Roster = { entries: [], newest: null };
 
 /** "Stale" means older than the newest Revision seen for that Round. */
 export const isStale = (entry: RosterEntry, roster: Roster) =>

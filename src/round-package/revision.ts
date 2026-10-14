@@ -1,3 +1,5 @@
+// A Revision is a per-Round counter plus a UTC minute stamp: `3-202610121403`.
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** When a Revision was exported, "12 Oct 14:03", in UTC like its stamp `3-202610121403`. */
@@ -7,4 +9,16 @@ export function revisionTime(stamp: string): string {
   if (!match) return stamp;
   const [, month, day, hour, minute] = match;
   return `${Number(day)} ${MONTHS[Number(month) - 1]} ${hour}:${minute}`;
+}
+
+/** Whether a string is a Revision. */
+export const isRevision = (value: string) => /^\d+-\d{12}$/.test(value);
+
+/** The counter in a Revision: 3 for `3-202610121403`. */
+export const revisionNumber = (revision: string) => Number(/^\d+/.exec(revision)?.[0] ?? 0);
+
+/** Whether Revision `a` is newer than `b`: a later counter, or the same counter exported later. */
+export function isNewerRevision(a: string, b: string): boolean {
+  const [na, nb] = [revisionNumber(a), revisionNumber(b)];
+  return na !== nb ? na > nb : a > b;
 }

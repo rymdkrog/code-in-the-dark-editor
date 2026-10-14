@@ -2,12 +2,11 @@
 // laptop is connected, and which Revision it runs. An entry stays listed for the rest of the
 // Round once it appears, dimmed while offline.
 
-import { isStale, revisionNumber, type Roster, type RosterEntry } from "../../protocol/protocol.ts";
-
-const EMPTY: Roster = { entries: [], newest: null };
+import { EMPTY_ROSTER, isStale, type Roster, type RosterEntry } from "../../protocol/protocol.ts";
+import { revisionNumber } from "../../round-package/revision.ts";
 
 /** "4 ready · 1 offline · 1 stale", leaving out what is none, or "nobody yet". */
-export function rosterStatus(roster: Roster = EMPTY): string {
+export function rosterStatus(roster: Roster = EMPTY_ROSTER): string {
   const { entries } = roster;
   if (!entries.length) return "nobody yet";
   const ready = entries.filter((entry) => entry.online).length;
@@ -18,7 +17,7 @@ export function rosterStatus(roster: Roster = EMPTY): string {
   return parts.join(" · ");
 }
 
-export function RosterTable({ roundName, roster = EMPTY }: { roundName: string; roster?: Roster }) {
+export function RosterTable({ roundName, roster = EMPTY_ROSTER }: { roundName: string; roster?: Roster }) {
   return (
     <section className="roster-section" aria-labelledby="roster-heading">
       <h2 id="roster-heading">

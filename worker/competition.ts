@@ -7,8 +7,8 @@ import {
   CLOSE_TOKEN,
   CLOSE_UNCLAIMED,
   CLOSE_VERSION,
+  EMPTY_ROSTER,
   isClaim,
-  isNewerRevision,
   parseSocketPath,
   PING,
   PONG,
@@ -25,6 +25,7 @@ import {
   type RosterEntry,
   type ServerMessage,
 } from "../src/protocol/protocol.ts";
+import { isNewerRevision, isRevision } from "../src/round-package/revision.ts";
 import type { Env } from "./index.ts";
 import { isLifecycleCommand, timesUp, transition, WELCOME } from "./lifecycle.ts";
 
@@ -37,14 +38,14 @@ interface Attachment {
   /** Set once a Stage or phone socket has asked to follow the Current Round. */
   follows?: true;
   /** Set once a Contestant socket's presence is on a Roster. */
-  seat?: Seat;
+  place?: RosterPlace;
 }
 
 /** The roles that may follow the Current Round. A Contestant receives Reactions only. */
 const FOLLOWERS: Role[] = ["stage", "phone"];
 
-/** Where on which Roster a Contestant socket is. */
-type Seat = Pick<Presence, "roundId" | "seat">;
+/** Which Round's Roster a Contestant socket is on, and as which seat. */
+type RosterPlace = Pick<Presence, "roundId" | "seat">;
 
 /** A Round's Roster as stored: everything but who is connected. */
 interface StoredRoster {
@@ -169,22 +170,22 @@ export class Competition extends DurableObject<Env> {
     if (!presence || !claim.rounds.some((round) => round.id === presence.roundId)) return;
 
     const { roundId, seat, name, revision } = presence;
-    const roster = (await this.ctx.storage.get<StoredRoster>(rosterKey(roundId))) ?? { entries: [], newest: null };
+    const roster = (await this.ctx.storage.get<StoredRoster>(rosterKey(roundId))) ?? structuredClone(EMPTY_ROSTER);
     const at = roster.entries.findIndex((entry) => entry.seat === seat);
     roster.entries.splice(at === -1 ? roster.entries.length : at, 1, { seat, name, revision });
     if (roster.newest === null || isNewerRevision(revision, roster.newest)) roster.newest = revision;
     await this.ctx.storage.put(rosterKey(roundId), roster);
 
-    const was = attachment.seat;
-    socket.serializeAttachment({ ...attachment, seat: { roundId, seat } } satisfies Attachment);
+    const was = attachment.place;
+    socket.serializeAttachment({ ...attachment, place: { roundId, seat } } satisfies Attachment);
     if (was && (was.roundId !== roundId || was.seat !== seat)) await this.rosterChanged(was.roundId);
     this.tellHosts({ v: V, t: "roster", roundId, roster: this.withOnline(roundId, roster) });
   }
 
   /** A socket closed: if it was a laptop on a Roster, its entry may now be offline. */
   private async left(socket: WebSocket) {
-    const { seat } = socket.deserializeAttachment() as Attachment;
-    if (seat) await this.rosterChanged(seat.roundId, socket);
+    const { place } = socket.deserializeAttachment() as Attachment;
+    if (place) await this.rosterChanged(place.roundId, socket);
   }
 
   /** Tells every Host a Round's Roster as it is now, leaving out a socket that is closing. */
@@ -197,13 +198,11 @@ export class Competition extends DurableObject<Env> {
   private withOnline(roundId: string, stored: StoredRoster | undefined, closing?: WebSocket): Roster {
     const online = new Set<string>();
     for (const socket of this.ctx.getWebSockets("contestant")) {
-      const { seat } = socket.deserializeAttachment() as Attachment;
-      if (socket !== closing && seat?.roundId === roundId) online.add(seat.seat);
+      const { place } = socket.deserializeAttachment() as Attachment;
+      if (socket !== closing && place?.roundId === roundId) online.add(place.seat);
     }
-    return {
-      entries: (stored?.entries ?? []).map((entry) => ({ ...entry, online: online.has(entry.seat) })),
-      newest: stored?.newest ?? null,
-    };
+    const { entries, newest } = stored ?? EMPTY_ROSTER;
+    return { entries: entries.map((entry) => ({ ...entry, online: online.has(entry.seat) })), newest };
   }
 
   /** A Stage or phone follows the Current Round from now on. Before the claim it waits, and the
@@ -266,7 +265,7 @@ const rosterKey = (roundId: string) => `roster:${roundId}`;
 function validPresence(message: Partial<Record<keyof Presence, unknown>>): Presence | null {
   const { roundId, seat, name, revision } = message;
   if (typeof roundId !== "string" || typeof seat !== "string" || typeof name !== "string") return null;
-  if (typeof revision !== "string" || !/^\d+-\d{12}$/.test(revision)) return null;
+  if (typeof revision !== "string" || !isRevision(revision)) return null;
   if (!seat || seat.length > MAX_SEAT_LENGTH || !name.trim()) return null;
   return { roundId, seat, name: name.trim().slice(0, MAX_NAME_LENGTH), revision };
 }

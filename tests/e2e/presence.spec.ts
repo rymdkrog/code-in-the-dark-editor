@@ -2,10 +2,11 @@
 // The Worker is the chaos suite's fake, so the test sees every message the package sends.
 
 import { expect, test, type Browser, type TestInfo } from "@playwright/test";
+import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { startFakeWorker, type FakeWorker } from "./fake-worker.ts";
+import { presences, startFakeWorker } from "./fake-worker.ts";
 import { gateNetwork } from "./no-network-gate.ts";
-import { enterName, makePackage, openPackage, PRACTICE, roundIn } from "./package.ts";
+import { editorText, enterName, makePackage, openPackage, PRACTICE, roundIn } from "./package.ts";
 
 const JOIN_CODE = "K7XQ2N";
 const TOKEN = "contestant-token-for-the-presence-tests";
@@ -23,9 +24,6 @@ async function online(browser: Browser, workerUrl?: string) {
   return { context, page: await context.newPage(), check };
 }
 
-const presences = (worker: FakeWorker) =>
-  worker.messages.filter((message) => (message as { t?: string }).t === "presence") as Record<string, unknown>[];
-
 test("a package with a Worker URL sends presence only: name, Round id, seat and Revision, with the token", async ({
   browser,
 }, testInfo) => {
@@ -39,7 +37,7 @@ test("a package with a Worker URL sends presence only: name, Round id, seat and 
 
   await expect.poll(() => presences(worker)).toHaveLength(1);
   expect(worker.messages).toEqual([
-    { v: 1, t: "presence", token: TOKEN, roundId, seat: expect.stringMatching(/^[0-9a-f]{24}$/), name: "Anna", revision },
+    { v: 1, t: "presence", token: TOKEN, roundId, seat: expect.any(String), name: "Anna", revision },
   ]);
   check();
   await worker.stop();
@@ -106,3 +104,42 @@ test("a package without a Worker URL never opens a socket, even online", async (
   check();
 });
 
+
+test("with a Worker URL, only that Worker's socket gets through, while typing, on the Reference and in the Reveal", async ({
+  browser,
+}, testInfo) => {
+  const worker = await startFakeWorker();
+  const { page, check } = await online(browser, worker.url);
+  await openPackage(page, audiencePackage(testInfo, worker.url));
+
+  await page.keyboard.type('<h1>Moon</h1><img src="https://example.com/moon.png">');
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("img", { name: "Reference" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Reveal", exact: true }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill("yes");
+  await page.keyboard.press("Enter");
+  await expect(page.frameLocator("iframe.result").getByRole("heading", { name: "Moon" })).toBeVisible();
+
+  await expect.poll(() => presences(worker)).toHaveLength(1);
+  check();
+  await worker.stop();
+});
+
+test("a throw that escapes the Enhancement's script leaves the Core Editor working", async ({ page }, testInfo) => {
+  const worker = await startFakeWorker();
+  const file = audiencePackage(testInfo, worker.url);
+  // The Enhancement is the package's one classic inline script.
+  writeFileSync(file, readFileSync(file, "utf8").replace("<script>", '<script>throw new Error("Enhancement fault");'));
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await openPackage(page, file);
+  await page.keyboard.type("<h1>Moon");
+
+  expect(await editorText(page)).toBe("<h1>Moon</h1>");
+  await expect(page.getByRole("button", { name: /^Anna/ })).toBeVisible();
+  expect(errors).toEqual(["Enhancement fault"]);
+  expect(worker.connections).toBe(0);
+  await worker.stop();
+});

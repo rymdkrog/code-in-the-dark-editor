@@ -55,7 +55,11 @@ export function connectSocket(url: string, on: SocketHandlers): Socket {
       openedAt = undefined;
       heartbeat = setInterval(beat, PING_EVERY);
       ws.onopen = () => {
-        openedAt = heard = Date.now();
+        try {
+          openedAt = heard = Date.now();
+        } catch {
+          // Nothing above throws in practice; the rule is that no entry point can.
+        }
         call(on.open, undefined);
       };
       ws.onmessage = (event) => {

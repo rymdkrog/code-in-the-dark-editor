@@ -172,6 +172,10 @@ function parse(text: string): unknown {
   }
 }
 
+/** The presence messages a package sent. */
+export const presences = (worker: FakeWorker) =>
+  worker.messages.filter((message) => (message as { t?: string }).t === "presence") as Record<string, unknown>[];
+
 /** A port nothing listens on: connecting to it is refused. */
 export async function closedPort(): Promise<number> {
   const server = createServer();

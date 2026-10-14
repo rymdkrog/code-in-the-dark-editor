@@ -75,7 +75,11 @@ test("Contestants appear on the Roster with their name and Revision; offline and
 
   await anna.close();
   await expect(row(host, "Anna").getByRole("img", { name: "Offline" })).toBeVisible();
-  await expect(row(host, "Anna")).toHaveClass(/off/);
+  // Dimmed, as the Host sees it.
+  await expect(row(host, "Anna").getByRole("cell", { name: "Anna" })).not.toHaveCSS(
+    "color",
+    await row(host, "Bo").getByRole("cell", { name: "Bo" }).evaluate((cell) => getComputedStyle(cell).color),
+  );
   await expect(rail.getByRole("button", { name: /^Heat 1/ })).toContainText("1 ready · 1 offline · 1 stale");
   await expect(host.getByRole("heading", { name: /^Roster/ })).toContainText("1 ready · 1 offline · 1 stale");
 

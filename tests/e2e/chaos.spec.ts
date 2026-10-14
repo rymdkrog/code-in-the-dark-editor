@@ -6,8 +6,10 @@
 
 import { randomBytes } from "node:crypto";
 import { expect, test, type Browser, type Page, type TestInfo } from "@playwright/test";
+import { CLOSE_VERSION, V } from "../../src/protocol/protocol.ts";
+import { SEAT } from "../../src/round-package/events.ts";
 import { socketOrigin } from "../../src/round-package/fill-template.ts";
-import { closedPort, startFakeWorker, type Behaviour, type FakeWorker } from "./fake-worker.ts";
+import { closedPort, presences, startFakeWorker, type Behaviour, type FakeWorker } from "./fake-worker.ts";
 import { gateNetwork } from "./no-network-gate.ts";
 import { editorText, makePackage, openPackage } from "./package.ts";
 
@@ -76,11 +78,15 @@ async function session(
   browser: Browser,
   browserName: string,
   testInfo: TestInfo,
-  { workerUrl, initScript, during }: { workerUrl?: string; initScript?: () => void; during?: () => Promise<void> },
+  {
+    workerUrl,
+    initScript,
+    during,
+  }: { workerUrl?: string; initScript?: [(arg: string) => void, string]; during?: () => Promise<void> },
 ): Promise<Session> {
   const context = await browser.newContext();
   const check = await gateNetwork(context, { workerUrl, online: true });
-  if (initScript) await context.addInitScript(initScript);
+  if (initScript) await context.addInitScript(...initScript);
   const page = await context.newPage();
   const output: string[] = [];
   const workerSocket = workerUrl && socketOrigin(workerUrl);
@@ -116,9 +122,6 @@ async function expectUnnoticed(chaos: Session, browser: Browser, browserName: st
   expect(chaos.busy.lateness, "worst timer lateness once idle, ms").toBeLessThan(Math.max(30, busy.lateness * 3));
   expect(chaos.busy.taskShare, "share of time on tasks once idle").toBeLessThan(Math.max(0.1, busy.taskShare * 3));
 }
-
-const presences = (worker: FakeWorker) =>
-  worker.messages.filter((message) => (message as { t?: string }).t === "presence");
 
 /** A fake Worker for one scenario, stopped once the test ends. */
 let worker: FakeWorker | null = null;
@@ -208,7 +211,7 @@ test("a protocol version the Worker doesn't accept: the package stops reconnecti
   browserName,
 }, testInfo) => {
   // What the Worker does when a message's `v` is one it doesn't accept.
-  const { url } = await fake({ message: (peer) => peer.close(4001) });
+  const { url } = await fake({ message: (peer) => peer.close(CLOSE_VERSION) });
 
   const chaos = await session(browser, browserName, testInfo, { workerUrl: url, during: async () => void (await sleep(8000)) });
 
@@ -218,7 +221,7 @@ test("a protocol version the Worker doesn't accept: the package stops reconnecti
 
 test("a 1 MB message", async ({ browser, browserName }, testInfo) => {
   const { url } = await fake({
-    open: (peer) => peer.send(JSON.stringify({ v: 1, t: "react", seat: "x", e: "x".repeat(1_000_000) })),
+    open: (peer) => peer.send(JSON.stringify({ v: V, t: "react", seat: "x", e: "x".repeat(1_000_000) })),
   });
 
   await expectUnnoticed(await session(browser, browserName, testInfo, { workerUrl: url }), browser, browserName, testInfo);
@@ -246,15 +249,15 @@ test("the server restarts mid-Round, and the package comes back with its presenc
 test("the Enhancement throws at boot", async ({ browser, browserName }, testInfo) => {
   const { url } = await fake();
   // The Enhancement's first step is to listen for the Core's seat event; nothing else does.
-  const fault = () => {
+  const fault = (seatEvent: string) => {
     const listen = window.addEventListener;
     window.addEventListener = function (this: Window, ...args: Parameters<Window["addEventListener"]>) {
-      if (args[0] === "citd:seat") throw new Error("Injected fault");
+      if (args[0] === seatEvent) throw new Error("Injected fault");
       return listen.apply(this, args);
     } as Window["addEventListener"];
   };
 
-  const chaos = await session(browser, browserName, testInfo, { workerUrl: url, initScript: fault });
+  const chaos = await session(browser, browserName, testInfo, { workerUrl: url, initScript: [fault, SEAT] });
 
   await expectUnnoticed(chaos, browser, browserName, testInfo);
   expect(worker!.connections).toBe(0);
