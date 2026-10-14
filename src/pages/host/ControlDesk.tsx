@@ -2,7 +2,7 @@
 // Current Round's lifecycle with its clock and controls. The Worker owns the lifecycle; this
 // only sends commands, and sends none while offline.
 
-import { useEffect, useReducer, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   MAX_DURATION_MS,
   PHASES,
@@ -12,7 +12,7 @@ import {
   type Phase,
 } from "../../protocol/protocol.ts";
 import { stageLink } from "../links.ts";
-import { CopyButton, VersionFooter } from "../shared.tsx";
+import { CopyButton, formatClock, useRoundClock, VersionFooter } from "../shared.tsx";
 
 const PHASE_LABELS: Record<Phase, string> = {
   upcoming: "Up next",
@@ -92,7 +92,7 @@ export function ControlDesk({ competition, lifecycle, online, send }: Props) {
         </span>
         <CopyButton
           className="btn sm ghost"
-          text={stageLink(location.origin, competition.joinCode)}
+          text={stageLink(location.origin, competition.joinCode, competition.name)}
           label="Copy Stage link"
         />
       </header>
@@ -246,32 +246,13 @@ function Duration({ durationMs, online, send }: { durationMs: number; online: bo
 
 /** Counts down from `endsAt` while running; it keeps counting while the console is offline. */
 function Clock({ lifecycle }: { lifecycle: Lifecycle }) {
-  const [, tick] = useReducer((ticks: number) => ticks + 1, 0);
-  const running = lifecycle.phase === "running";
-  useEffect(() => {
-    if (!running) return;
-    const ticking = setInterval(tick, 200);
-    return () => clearInterval(ticking);
-  }, [running]);
-
+  const { text, urgency } = useRoundClock(lifecycle);
   if (lifecycle.phase === "voting" || lifecycle.phase === "results") return null;
-  const left = running
-    ? Math.max(0, lifecycle.endsAt! - Date.now())
-    : lifecycle.phase === "upcoming"
-      ? lifecycle.durationMs
-      : 0;
-  const urgency = !running ? "" : left <= 10_000 ? "last-ten" : left <= 60_000 ? "last-min" : "";
   return (
     <div className={`clock mono ${urgency}`} role="timer" aria-label="Clock">
-      {formatClock(left)}
+      {text}
     </div>
   );
-}
-
-/** mm:ss, rounding up, so the clock shows 00:00 only once time is up. */
-function formatClock(ms: number) {
-  const seconds = Math.max(0, Math.ceil(ms / 1000));
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 const PhaseChip = ({ phase }: { phase: Phase }) => <span className={`chip ph-${phase}`}>{PHASE_LABELS[phase]}</span>;

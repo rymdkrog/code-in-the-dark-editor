@@ -47,7 +47,7 @@ test("the Audience pane mints credentials locally; packages and the Host console
   // The Host secret is masked on the page.
   await expect(page.getByText(claim.hostSecret)).toHaveCount(0);
   await expect(page.getByLabel("Host secret")).toContainText("•");
-  await expect(page.getByLabel("Stage link")).toHaveText(`${WORKER}/stage/?c=${code}`);
+  await expect(page.getByLabel("Stage link")).toHaveText(`${WORKER}/stage/?c=${code}&n=Gothenburg+2026`);
 
   await page.getByRole("button", { name: /^Heat 1/ }).click();
   const opened = await openPackage(browser, (await exportRound(page, testInfo)).path);

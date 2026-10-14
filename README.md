@@ -97,6 +97,8 @@ Every Round package includes:
 
 Both licences are copied into a comment at the top of every built `.html`.
 
+The Stage draws its QR codes with [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator). Copyright (c) 2009 Kazuhiko Arase. MIT. "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
+
 ## Licence
 
 BSD-3-Clause — see [`LICENSE`](./LICENSE).

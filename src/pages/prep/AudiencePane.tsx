@@ -12,6 +12,7 @@ interface Props {
 export function AudiencePane({ competition, onChange, onMint }: Props) {
   const { audience } = competition;
   const origin = workerOrigin(audience.workerUrl);
+  const stage = origin ? stageLink(origin, audience.joinCode, competition.name) : "";
   return (
     <section className="pane">
       <h2>Audience</h2>
@@ -83,8 +84,8 @@ export function AudiencePane({ competition, onChange, onMint }: Props) {
                 <b>Stage</b>
                 <span className="dim"> — the venue screen</span>
                 <div className="link-row">
-                  <CopyButton className="small-button" text={stageLink(origin, audience.joinCode)} label="Copy Stage link" />
-                  <code aria-label="Stage link">{stageLink(origin, audience.joinCode)}</code>
+                  <CopyButton className="small-button" text={stage} label="Copy Stage link" />
+                  <code aria-label="Stage link">{stage}</code>
                 </div>
               </div>
             </div>

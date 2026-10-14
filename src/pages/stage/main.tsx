@@ -1,9 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Placeholder } from "../Placeholder.tsx";
+import { Stage } from "./Stage.tsx";
+import "./stage.css";
 
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
-    <Placeholder title="Stage" />
+    <Stage />
   </StrictMode>,
 );

@@ -15,6 +15,8 @@ import {
   type CompetitionSummary,
   type Lifecycle,
   type LifecycleCommand,
+  type PublicEntry,
+  type Role,
   type ServerMessage,
 } from "../src/protocol/protocol.ts";
 import type { Env } from "./index.ts";
@@ -25,7 +27,12 @@ interface Attachment {
   joinCode: string;
   /** Set once the socket has shown the Host secret. */
   host?: true;
+  /** Set once a Stage or phone socket has asked to follow the Current Round. */
+  follows?: true;
 }
+
+/** The roles that may follow the Current Round. A Contestant receives Reactions only. */
+const FOLLOWERS: Role[] = ["stage", "phone"];
 
 export class Competition extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -61,6 +68,8 @@ export class Competition extends DurableObject<Env> {
         return this.greetHost(socket, message.hostSecret);
       case "claim":
         return this.claim(socket, message.organizerKey, message.claim);
+      case "follow":
+        return this.follow(socket);
     }
     if (isLifecycleCommand(message)) return this.command(socket, message);
   }
@@ -96,11 +105,22 @@ export class Competition extends DurableObject<Env> {
     }
     if (!existing) await this.ctx.storage.put("claim", claim);
     await this.admitHost(socket, existing ?? claim);
+    if (!existing) await this.tellFollowers(claim);
   }
 
   private async admitHost(socket: WebSocket, claim: Claim) {
     socket.serializeAttachment({ ...(socket.deserializeAttachment() as Attachment), host: true } satisfies Attachment);
     send(socket, { v: V, t: "competition", competition: summary(claim), lifecycle: await this.lifecycle() });
+  }
+
+  /** A Stage or phone follows the Current Round from now on. Before the claim it waits, and the
+   * claim brings it the snapshot. */
+  private async follow(socket: WebSocket) {
+    if (!this.ctx.getTags(socket).some((role) => FOLLOWERS.includes(role as Role))) return;
+    socket.serializeAttachment({ ...(socket.deserializeAttachment() as Attachment), follows: true } satisfies Attachment);
+    const claim = await this.ctx.storage.get<Claim>("claim");
+    if (!claim) return send(socket, { v: V, t: "unclaimed" });
+    send(socket, await this.publicState(claim));
   }
 
   private async command(socket: WebSocket, command: LifecycleCommand) {
@@ -118,7 +138,7 @@ export class Competition extends DurableObject<Env> {
     return (await this.ctx.storage.get<Lifecycle>("lifecycle")) ?? WELCOME;
   }
 
-  /** Stores a new lifecycle, keeps the alarm on its `endsAt`, and tells every Host. */
+  /** Stores a new lifecycle, keeps the alarm on its `endsAt`, and tells every Host and follower. */
   private async change(lifecycle: Lifecycle) {
     await this.ctx.storage.put("lifecycle", lifecycle);
     if (lifecycle.endsAt === null) await this.ctx.storage.deleteAlarm();
@@ -126,11 +146,31 @@ export class Competition extends DurableObject<Env> {
     for (const socket of this.ctx.getWebSockets()) {
       if (isHost(socket)) send(socket, { v: V, t: "lifecycle", lifecycle });
     }
+    // Only a claimed Competition has a lifecycle to change.
+    await this.tellFollowers((await this.ctx.storage.get<Claim>("claim"))!);
+  }
+
+  private async tellFollowers(claim: Claim) {
+    const followers = this.ctx.getWebSockets().filter(follows);
+    if (!followers.length) return;
+    const state = await this.publicState(claim);
+    for (const socket of followers) send(socket, state);
+  }
+
+  private async publicState(claim: Claim): Promise<ServerMessage> {
+    return { v: V, t: "public", competition: summary(claim), lifecycle: await this.lifecycle(), roster: this.roster() };
+  }
+
+  /** The Current Round's Roster. Nobody is on a Roster until Contestants send presence. */
+  private roster(): PublicEntry[] {
+    return [];
   }
 }
 
 /** Whether the socket has shown the Host secret. */
 const isHost = (socket: WebSocket) => (socket.deserializeAttachment() as Attachment).host === true;
+
+const follows = (socket: WebSocket) => (socket.deserializeAttachment() as Attachment).follows === true;
 
 const summary = (claim: Claim): CompetitionSummary => ({
   name: claim.competitionName,

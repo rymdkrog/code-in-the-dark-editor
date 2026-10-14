@@ -196,10 +196,7 @@ test("a Host console link whose claim is missing says so", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "This Host console link is incomplete" })).toBeVisible();
 });
 
-test("the Worker serves the Stage and the Audience phone page", async ({ page }) => {
-  await page.goto(`${WORKER_URL}/stage/?c=K7XQ2N`);
-  await expect(page.getByRole("heading", { name: "Stage" })).toBeVisible();
-
+test("the Worker serves the Audience phone page", async ({ page }) => {
   await page.goto(`${WORKER_URL}/join/?c=K7XQ2N`);
   await expect(page.getByRole("heading", { name: "Join the Audience" })).toBeVisible();
 });

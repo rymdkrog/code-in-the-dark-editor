@@ -1,0 +1,66 @@
+/* Stage variant D (Combined) from the Stage/Host prototype, at 1920×1080 logical px. */
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #000; color: #f2f2f2; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+.stage-frame { position: fixed; inset: 0; overflow: hidden; }
+.st {
+  position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; overflow: hidden;
+  background: #07070a; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.popout {
+  position: absolute; left: 10px; top: 10px; opacity: 0; transition: opacity .2s;
+  background: #1f2026; color: #e9e9ee; border: 1px solid #ffffff26; border-radius: 8px; padding: 6px 12px; font: 600 13px system-ui; cursor: pointer;
+}
+.popout:hover, .popout:focus-visible { opacity: 1; }
+
+.st .kicker, .st .head small { font-size: 34px; letter-spacing: .3em; text-transform: uppercase; color: #3ee6ff; }
+.st .qr { display: block; border-radius: 10px; flex: none; }
+.st .clock { font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.st .clock.last-min { color: #ffb547; }
+.st .clock.last-ten { color: #ff3e8a; animation: throb 1s infinite; }
+@keyframes throb { 50% { opacity: .55; } }
+.st-offline { position: absolute; right: 22px; top: 14px; font: 600 26px system-ui; color: #ffb547; display: flex; gap: 8px; align-items: center; opacity: .8; }
+.st-offline i { width: 12px; height: 12px; border-radius: 50%; background: #ffb547; animation: throb 1s infinite; }
+.st-version { position: absolute; right: 14px; bottom: 8px; font: 14px system-ui; color: #44444d; }
+
+/* Waiting for the claim */
+.st-wait { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 24px; }
+.st-wait .big { font-size: 110px; font-weight: 800; overflow-wrap: anywhere; padding: 0 70px; }
+.st-wait .sub { font: 40px system-ui; color: #8a8a96; }
+
+/* Welcome, up next, time's up, voting and results: name tiles */
+.st .bar { position: absolute; left: 0; right: 0; top: 0; height: 30px; background: #ffffff10; }
+.st .bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff3e8a, #3ee6ff); transform-origin: 0 50%; }
+.st .head { position: absolute; left: 70px; right: 70px; top: 70px; display: flex; justify-content: space-between; align-items: center; }
+.st .round-name { font-size: 80px; font-weight: 800; }
+.st .round-name small { display: block; font-weight: 400; }
+.st .head .clock { font-size: 170px; }
+.st .tiles { position: absolute; left: 70px; right: 70px; top: 290px; bottom: 210px; margin: 0; padding: 0; list-style: none; display: flex; gap: 28px; align-items: stretch; justify-content: center; }
+.st .tile {
+  flex: 1; max-width: 360px; border: 3px solid #ffffff22; border-radius: 22px; background: #ffffff06;
+  display: flex; align-items: flex-end; justify-content: center; padding: 24px 14px; font: 700 50px system-ui; text-align: center; overflow-wrap: anywhere;
+}
+.st .mid { position: absolute; left: 70px; right: 70px; top: 120px; bottom: 210px; display: grid; place-content: center; text-align: center; gap: 20px; }
+.st .mid .big { font-size: 170px; font-weight: 800; line-height: 1; overflow-wrap: anywhere; }
+.st .mid .sub { font: 48px system-ui; color: #b7b7c2; }
+.st .foot {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 170px; background: #111118; border-top: 3px solid #ffffff14;
+  display: flex; align-items: center; justify-content: center; gap: 40px; font-size: 44px;
+}
+.st .foot b { color: #3ee6ff; letter-spacing: .14em; font-size: 64px; }
+
+/* Running: the giant clock */
+.st .top { position: absolute; left: 70px; right: 70px; top: 50px; display: flex; justify-content: space-between; font-size: 40px; color: #8a8a96; }
+.st .top b { color: #f2f2f2; }
+.st .center { position: absolute; left: 70px; right: 70px; top: 140px; bottom: 230px; display: grid; place-content: center; text-align: center; }
+.st .clock.giant { font-size: 440px; letter-spacing: -.02em; }
+.st .bottom { position: absolute; left: 70px; right: 70px; bottom: 50px; height: 170px; display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; }
+.st .names { margin: 0; padding: 0; list-style: none; align-self: center; display: flex; flex-wrap: wrap; gap: 8px 34px; font: 600 44px system-ui; color: #d0d0d8; }
+.st .names li::before { content: "● "; color: #ff3e8a; font-size: 26px; vertical-align: middle; }
+.st .join-corner { display: flex; align-items: center; gap: 22px; font-size: 30px; color: #b7b7c2; text-align: right; flex: none; }
+.st .join-corner b { display: block; font-size: 54px; color: #f2f2f2; letter-spacing: .12em; }
+
+/* A Stage link without a Join code */
+.stage-notice { min-height: 100vh; display: grid; place-content: center; text-align: center; padding: 16px; }
+.stage-notice footer { color: #6d6d78; font-size: 11px; margin-top: 24px; }
