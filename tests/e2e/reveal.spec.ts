@@ -84,17 +84,21 @@ test('the Reveal asks for "yes" first, and Cancel or Esc go back to the editor',
 
   await revealButton(page).click();
   await expect(dialog).toContainText("WILL DISQUALIFY YOU");
+  await expect(dialog.getByRole("alert")).toBeHidden();
   await page.keyboard.press("Enter");
-  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveText('Type "yes" to reveal');
   await dialog.getByRole("textbox").fill("no");
+  await expect(dialog.getByRole("alert")).toBeHidden();
   await page.keyboard.press("Enter");
-  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveText('Type "yes" to reveal');
+  // One click, even right after a wrong word.
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator("#editor textarea")).toBeFocused();
 
   await revealButton(page).click();
   await expect(dialog.getByRole("textbox")).toHaveValue("");
+  await expect(dialog.getByRole("alert")).toBeHidden();
   await dialog.getByRole("textbox").fill("yes");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();

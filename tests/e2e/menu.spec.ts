@@ -173,7 +173,7 @@ test('Reset Round empties the Round only once "reset" is typed, and the empty Ro
   const input = dialog(page).getByRole("textbox");
   await input.fill("yes");
   await page.keyboard.press("Enter");
-  await expect(dialog(page)).toBeVisible();
+  await expect(dialog(page).getByRole("alert")).toHaveText('Type "reset" to empty the Round');
   expect(await editorText(page)).toBe("practice code");
 
   await input.fill("reset");

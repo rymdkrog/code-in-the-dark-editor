@@ -430,6 +430,12 @@ dialog input {
   color: white;
 }
 
+/* What a typed-confirm dialog needs before it goes on. Under the input, in its margin. */
+.dialog-hint {
+  margin: -10px 0 10px;
+  color: #f9ff00;
+}
+
 /* The original's buttons. */
 dialog button {
   padding: 10px 15px;
