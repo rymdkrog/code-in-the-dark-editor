@@ -43,7 +43,13 @@ export async function openSocket(
         ? Promise.resolve(received.shift()!)
         : new Promise((resolve, reject) => {
             waiting.push(resolve);
-            setTimeout(() => reject(new Error(`No message from the Worker within ${within} ms`)), within);
+            setTimeout(() => {
+              // Gives up its place, so the next message goes to the next `next()`.
+              const at = waiting.indexOf(resolve);
+              if (at === -1) return;
+              waiting.splice(at, 1);
+              reject(new Error(`No message from the Worker within ${within} ms`));
+            }, within);
           }),
     closed,
     close: () => socket.close(),

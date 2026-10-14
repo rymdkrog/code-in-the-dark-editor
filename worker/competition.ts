@@ -180,6 +180,7 @@ export class Competition extends DurableObject<Env> {
     socket.serializeAttachment({ ...attachment, place: { roundId, seat } } satisfies Attachment);
     if (was && (was.roundId !== roundId || was.seat !== seat)) await this.rosterChanged(was.roundId);
     this.tellHosts({ v: V, t: "roster", roundId, roster: this.withOnline(roundId, roster) });
+    if (roundId === (await this.lifecycle()).current) await this.tellFollowers(claim);
   }
 
   /** A socket closed: if it was a laptop on a Roster, its entry may now be offline. */
@@ -253,9 +254,12 @@ export class Competition extends DurableObject<Env> {
     for (const socket of followers) send(socket, snapshot);
   }
 
+  /** The Current Round's Roster is names only: who is connected and on which Revision is the Host's. */
   private async publicSnapshot(claim: Claim): Promise<ServerMessage> {
-    // Nobody is on a Roster until Contestants send presence.
-    return { v: V, t: "public", competition: summary(claim), lifecycle: await this.lifecycle(), roster: [] };
+    const lifecycle = await this.lifecycle();
+    const stored = lifecycle.current ? await this.ctx.storage.get<StoredRoster>(rosterKey(lifecycle.current)) : undefined;
+    const roster = (stored ?? EMPTY_ROSTER).entries.map((entry) => ({ id: entry.seat, name: entry.name }));
+    return { v: V, t: "public", competition: summary(claim), lifecycle, roster };
   }
 }
 

@@ -217,3 +217,27 @@ test("the Roster survives a Durable Object restart; its laptops are offline unti
     { seat: anna.seat, name: "Anna", revision: anna.revision, online: true },
   ]);
 });
+
+test("the Stage and phones see the Current Round's Roster: names only, and nobody from another Round", async () => {
+  const { claim, host } = await claimed();
+  host.send({ t: "make-current", roundId: HEAT_1 });
+  await host.next();
+  const stage = await connect(worker, claim.joinCode, "stage");
+  stage.send({ t: "follow" });
+  expect(await stage.next()).toMatchObject({ t: "public", roster: [] });
+
+  const anna = presence();
+  await laptop(claim, presence({ roundId: FINAL, name: "Finn" }));
+  await expect(stage.next(500)).rejects.toThrow(/No message/);
+  const annaLaptop = await laptop(claim, anna);
+  expect(await stage.next()).toMatchObject({ t: "public", roster: [{ id: anna.seat, name: "Anna" }] });
+
+  annaLaptop.send({ t: "presence", token: claim.contestantToken, ...anna, name: "Anna K" });
+  const renamed = await stage.next();
+  expect(renamed).toMatchObject({ t: "public", roster: [{ id: anna.seat, name: "Anna K" }] });
+  expect(JSON.stringify(renamed)).not.toContain(anna.revision);
+
+  const phone = await connect(worker, claim.joinCode, "phone");
+  phone.send({ t: "follow" });
+  expect(await phone.next()).toEqual(renamed);
+});
