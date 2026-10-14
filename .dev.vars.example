@@ -1,0 +1,3 @@
+# The Organizer key: the secret a Host types to claim a Competition. The Deploy to Cloudflare
+# button asks for it and sets it as a Worker secret. For `wrangler dev`, copy this file to .dev.vars.
+ORGANIZER_KEY=change-me-to-something-long

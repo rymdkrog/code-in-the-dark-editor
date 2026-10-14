@@ -1,7 +1,8 @@
-# The Audience layer. Deploy the closed instance only by hand (`wrangler deploy`),
-# never from CI on merge or tag: a deploy drops every socket mid-Competition.
+# The Audience layer. Deploy the closed instance only by hand (the Deploy the Worker workflow
+# or `wrangler deploy`), never from CI on merge or tag: a deploy drops every socket
+# mid-Competition. After every deploy, run `npm run smoke`.
 # The Organizer key is a Worker secret: `wrangler secret put ORGANIZER_KEY`, or for
-# `wrangler dev`, a line `ORGANIZER_KEY=…` in .dev.vars.
+# `wrangler dev`, a line `ORGANIZER_KEY=…` in .dev.vars (see .dev.vars.example).
 name = "code-in-the-dark"
 main = "worker/index.ts"
 compatibility_date = "2026-10-01"

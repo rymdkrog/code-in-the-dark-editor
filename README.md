@@ -56,9 +56,35 @@ npm run test:e2e   # the no-network gate, the prep page and the Host console, ag
 npm run worker:dev # the Worker and its pages (Host console, Stage, Audience phone) under wrangler dev
 ```
 
-The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, put `ORGANIZER_KEY=…` in `.dev.vars`; for a deployed Worker, run `npx wrangler secret put ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally) and open the Host console link.
+The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and set `ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally) and open the Host console link.
 
 Double-click `dist/citd-practice.html` to try the editor. `scripts/make-practice-fixture.ts` regenerates the practice Reference and asset from their sources in `fixtures/practice/`.
+
+## Run your own Audience layer
+
+The Audience layer (the Host console, the Stage and the Audience phone page) runs on a Cloudflare Worker. Access control is running your own: anyone who wants it deploys their own Worker.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rymdkrog/code-in-the-dark-editor)
+
+The button copies this repo to your account and deploys the Worker, its Durable Object and its pages. It asks for the Organizer key and sets it as a Worker secret. To deploy by hand instead:
+
+```sh
+npx wrangler deploy
+npx wrangler secret put ORGANIZER_KEY
+```
+
+After every deploy, run the smoke test. It connects with `Origin: null` as a Round package does, claims a throwaway Competition and checks the round trip:
+
+```sh
+WORKER_URL=https://code-in-the-dark.<you>.workers.dev ORGANIZER_KEY=… npm run smoke
+```
+
+> [!WARNING]
+> **No deploys from the day before a Competition until it ends.** A deploy drops every socket: Contestants keep typing, but the Host console, the Stage and the phones all reconnect.
+
+### The closed instance
+
+This repo's own Worker is deployed only by hand: the [Deploy the Worker](./.github/workflows/deploy.yml) workflow (Actions → Run workflow) or a local `npx wrangler deploy`. Nothing deploys it on merge or tag. The workflow asks you to confirm that no Competition is on today or tomorrow, then deploys and runs the smoke test. It needs the repository secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ORGANIZER_KEY`, and the repository variable `WORKER_URL`.
 
 ## Credits
 

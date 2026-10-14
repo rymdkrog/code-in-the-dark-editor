@@ -1,0 +1,47 @@
+name: Deploy the Worker
+
+# Deploys the closed instance of the Audience layer, by hand only. It never runs on merge or tag:
+# a deploy drops every socket, mid-Competition too. No deploys from the day before a Competition
+# until it ends.
+#
+# Needs the repository secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and ORGANIZER_KEY (the
+# Worker's own Organizer key, for the smoke test), and the repository variable WORKER_URL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      no_competition:
+        description: "No deploys from the day before a Competition until it ends. Tick to confirm no Competition is on today or tomorrow."
+        type: boolean
+        required: true
+        default: false
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No Competition today or tomorrow
+        if: ${{ !inputs.no_competition }}
+        run: |
+          echo "::error::Not deployed: no deploys from the day before a Competition until it ends. Run it again and tick the box once no Competition is on today or tomorrow."
+          exit 1
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Deploy the Worker and its pages
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Post-deploy smoke test (Origin null, claim, round trip)
+        run: npm run smoke
+        env:
+          WORKER_URL: ${{ vars.WORKER_URL }}
+          ORGANIZER_KEY: ${{ secrets.ORGANIZER_KEY }}

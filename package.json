@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "worker:dev": "wrangler dev"
+    "worker:dev": "wrangler dev",
+    "smoke": "node tests/worker/smoke.ts"
   },
   "dependencies": {
     "@fontsource/press-start-2p": "5.3.0",
@@ -39,5 +40,12 @@
     "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^5.0.4",
     "wrangler": "^4.150.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ORGANIZER_KEY": {
+        "description": "The secret a Host types in the Host console to claim a Competition on this Worker. Make it long and keep it to yourself: anyone who has it can claim Competitions here."
+      }
+    }
   }
 }
