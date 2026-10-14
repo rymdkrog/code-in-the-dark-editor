@@ -441,3 +441,18 @@ button:focus {
   84.68% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
   100% { transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1); }
 }
+
+/* Shown while autosave fails, until a save succeeds. */
+.storage-failing {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  color: #f9ff00;
+  line-height: 0;
+}
+
+.storage-failing[hidden] {
+  display: none;
+}

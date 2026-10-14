@@ -20,8 +20,10 @@ export async function gateNetwork(context: BrowserContext): Promise<() => void> 
     if (message.type() === "error") errors.push(message.text());
   });
   context.on("weberror", (error) => errors.push(String(error.error())));
+  // "Leave the page?" is answered yes, as a person closing the tab would.
   context.on("dialog", (dialog) => {
-    if (dialog.type() !== "beforeunload") browserDialogs.push(`${dialog.type()}: ${dialog.message()}`);
+    if (dialog.type() === "beforeunload") return void dialog.accept();
+    browserDialogs.push(`${dialog.type()}: ${dialog.message()}`);
     void dialog.dismiss();
   });
   // A request the package's CSP blocks never reaches the network, so it never shows up

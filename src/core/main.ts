@@ -1,4 +1,5 @@
 import "./core-editor.css";
+import { startAutosave } from "./autosave.ts";
 import { startCombo } from "./combo.ts";
 import { startEditor } from "./editor.ts";
 import { setUpInstructions } from "./instructions.ts";
@@ -22,6 +23,8 @@ if (round) {
     else reference.toggle();
   });
 
+  const storageFailing = document.querySelector<HTMLElement>(".storage-failing")!;
+  startAutosave(editor, round.roundId, (working) => (storageFailing.hidden = working));
   startNameBadge(round, editor);
   // Last: as in the original, code put in the editor before this doesn't count to the Combo.
   startCombo(editor);

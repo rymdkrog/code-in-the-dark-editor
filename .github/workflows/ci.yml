@@ -39,7 +39,7 @@ jobs:
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Build the template and citd-practice.html
         run: npm run build
-      - name: No-network gate
+      - name: No-network gate and recovery suite
         run: npx playwright test --project ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure()
