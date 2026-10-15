@@ -7,8 +7,8 @@ import {
   type Claim,
   type ClaimRefusal,
   type CompetitionSummary,
+  type HostCommand,
   type Lifecycle,
-  type LifecycleCommand,
   type Roster,
   type ServerMessage,
 } from "../../protocol/protocol.ts";
@@ -92,7 +92,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
 
   // Sent now or dropped: a command must never land late. A refused one changes nothing, and the
   // console already shows the Worker's lifecycle.
-  const sendCommand = (command: LifecycleCommand) => socket.current?.send({ v: V, ...command }) ?? false;
+  const sendCommand = (command: HostCommand) => socket.current?.send({ v: V, ...command }) ?? false;
 
   switch (standing.kind) {
     case "unknown":

@@ -76,9 +76,9 @@ test("Contestants appear on the Roster with their name and Revision; offline and
   await anna.close();
   await expect(row(host, "Anna").getByRole("img", { name: "Offline" })).toBeVisible();
   // Dimmed, as the Host sees it.
-  await expect(row(host, "Anna").getByRole("cell", { name: "Anna" })).not.toHaveCSS(
+  await expect(row(host, "Anna").getByRole("cell", { name: "Anna", exact: true })).not.toHaveCSS(
     "color",
-    await row(host, "Bo").getByRole("cell", { name: "Bo" }).evaluate((cell) => getComputedStyle(cell).color),
+    await row(host, "Bo").getByRole("cell", { name: "Bo", exact: true }).evaluate((cell) => getComputedStyle(cell).color),
   );
   await expect(rail.getByRole("button", { name: /^Heat 1/ })).toContainText("1 ready · 1 offline · 1 stale");
   await expect(host.getByRole("heading", { name: /^Roster/ })).toContainText("1 ready · 1 offline · 1 stale");
@@ -104,4 +104,46 @@ test("a new name shows on the Roster in place of the old one", async ({ browser,
   await expect(row(host, "Anna K")).toBeVisible();
   await expect(rosterOf(host).getByRole("row")).toHaveCount(2);
   await anna.close();
+});
+
+test("the Host adds a Contestant by hand and removes entries after a confirm; a connected one stays off", async ({
+  browser,
+  page: host,
+}, testInfo) => {
+  const claim = newClaim();
+  await claimConsole(host, claim);
+  const rail = host.getByRole("navigation", { name: "Rounds" });
+  await rail.getByRole("button", { name: /^Heat 1/ }).click();
+  const anna = await laptop(browser, heatPackage(testInfo, claim, 1), "Anna");
+  await expect(row(host, "Anna")).toBeVisible({ timeout: 20_000 });
+  const dialog = host.getByRole("dialog");
+
+  const add = host.getByRole("textbox", { name: "Add a Contestant by hand" });
+  await add.fill("Cleo");
+  await add.press("Enter");
+  await expect(row(host, "Cleo")).toContainText("added by hand");
+  await expect(row(host, "Cleo").getByRole("img", { name: /^Added by hand/ })).toBeVisible();
+  await expect(add).toHaveValue("");
+  await expect(rail.getByRole("button", { name: /^Heat 1/ })).toContainText("1 ready · 1 by hand");
+
+  await row(host, "Cleo").getByRole("button", { name: "Remove Cleo" }).click();
+  await expect(dialog).toContainText("Remove Cleo from Heat 1?");
+  await dialog.getByRole("button", { name: "Remove" }).click();
+  await expect(row(host, "Cleo")).toHaveCount(0);
+
+  await row(host, "Anna").getByRole("button", { name: "Remove Anna" }).click();
+  await expect(dialog).toContainText("Their laptop is still connected. It stays hidden for the rest of this Round.");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(row(host, "Anna")).toBeVisible();
+  await row(host, "Anna").getByRole("button", { name: "Remove Anna" }).click();
+  await dialog.getByRole("button", { name: "Remove" }).click();
+  await expect(rosterOf(host)).toContainText("Nobody has opened Heat 1 yet.");
+
+  // Reloading the removed laptop doesn't bring it back; a new one still appears.
+  await anna.page.reload();
+  await expect(anna.page.locator("#editor textarea")).toBeFocused();
+  const bo = await laptop(browser, heatPackage(testInfo, claim, 1), "Bo");
+  await expect(row(host, "Bo")).toBeVisible();
+  await expect(row(host, "Anna")).toHaveCount(0);
+  await Promise.all([anna.close(), bo.close()]);
 });

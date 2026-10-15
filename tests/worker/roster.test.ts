@@ -241,3 +241,164 @@ test("the Stage and phones see the Current Round's Roster: names only, and nobod
   phone.send({ t: "follow" });
   expect(await phone.next()).toEqual(renamed);
 });
+
+/** The names on a Roster, in order. */
+const names = (roster: Roster) => roster.entries.map((entry) => entry.name);
+
+/** Sends a Roster command and returns the Roster update every Host hears. */
+async function rosterCommand(host: TestSocket, command: object) {
+  host.send(command);
+  return update(host);
+}
+
+test("the Host adds a Contestant by hand: listed, without a laptop or Revision, and on the Stage", async () => {
+  const { claim, host } = await claimed();
+  host.send({ t: "make-current", roundId: HEAT_1 });
+  await host.next();
+  const stage = await connect(worker, claim.joinCode, "stage");
+  stage.send({ t: "follow" });
+  await stage.next();
+  await laptop(claim, presence({ revision: "2-202610121403" }));
+  await update(host);
+  await stage.next();
+
+  const { roundId, roster } = await rosterCommand(host, { t: "add-by-hand", roundId: HEAT_1, name: "  Cleo  " });
+
+  expect(roundId).toBe(HEAT_1);
+  const cleo = roster.entries[1]!;
+  expect(cleo).toEqual({ seat: expect.any(String), name: "Cleo", revision: null, online: false });
+  expect(isStale(cleo, roster)).toBe(false);
+  expect(roster.newest).toBe("2-202610121403");
+  expect(await stage.next()).toMatchObject({ t: "public", roster: [{ name: "Anna" }, { id: cleo.seat, name: "Cleo" }] });
+  // Same names get separate entries.
+  const again = await rosterCommand(host, { t: "add-by-hand", roundId: HEAT_1, name: "Cleo" });
+  expect(names(again.roster)).toEqual(["Anna", "Cleo", "Cleo"]);
+  expect(new Set(again.roster.entries.map((entry) => entry.seat)).size).toBe(3);
+});
+
+test("a hand-added entry's seat can't be taken over by a laptop's presence", async () => {
+  const { claim, host } = await claimed();
+  const { roster } = await rosterCommand(host, { t: "add-by-hand", roundId: HEAT_1, name: "Cleo" });
+
+  await laptop(claim, presence({ seat: roster.entries[0]!.seat, name: "Mallory" }));
+
+  await expect(host.next(500)).rejects.toThrow(/No message/);
+  expect((await rosters(claim))[HEAT_1]).toEqual(roster);
+});
+
+test("the Host removes an offline entry; its laptop coming back later appears again", async () => {
+  const { claim, host } = await claimed();
+  const [anna, bo] = [presence(), presence({ name: "Bo" })];
+  (await laptop(claim, anna)).close();
+  await update(host);
+  await update(host);
+  await laptop(claim, bo);
+  await update(host);
+
+  const { roster } = await rosterCommand(host, { t: "remove-entry", roundId: HEAT_1, seat: anna.seat });
+
+  expect(names(roster)).toEqual(["Bo"]);
+  expect(names((await rosters(claim))[HEAT_1]!)).toEqual(["Bo"]);
+  await laptop(claim, anna);
+  expect(names((await update(host)).roster)).toEqual(["Bo", "Anna"]);
+});
+
+test("the Host removes a hand-added entry, and the Stage stops listing it", async () => {
+  const { claim, host } = await claimed();
+  host.send({ t: "make-current", roundId: HEAT_1 });
+  await host.next();
+  const { roster } = await rosterCommand(host, { t: "add-by-hand", roundId: HEAT_1, name: "Cleo" });
+  const stage = await connect(worker, claim.joinCode, "stage");
+  stage.send({ t: "follow" });
+  expect(await stage.next()).toMatchObject({ roster: [{ name: "Cleo" }] });
+
+  const removed = await rosterCommand(host, { t: "remove-entry", roundId: HEAT_1, seat: roster.entries[0]!.seat });
+
+  expect(removed.roster.entries).toEqual([]);
+  expect(await stage.next()).toMatchObject({ t: "public", roster: [] });
+});
+
+test("a removed entry whose laptop is still connected stays hidden for the rest of the Round", async () => {
+  const { claim, host } = await claimed();
+  const anna = presence();
+  const annasLaptop = await laptop(claim, anna);
+  await update(host);
+
+  const { roster } = await rosterCommand(host, { t: "remove-entry", roundId: HEAT_1, seat: anna.seat });
+  expect(roster.entries).toEqual([]);
+
+  // A new name, a reload and a laptop that goes all bring nothing back.
+  annasLaptop.send({ t: "presence", token: claim.contestantToken, ...anna, name: "Anna K" });
+  annasLaptop.close();
+  await laptop(claim, anna);
+  await laptop(claim, presence({ name: "Bo" }));
+  expect(names((await update(host)).roster)).toEqual(["Bo"]);
+  expect(names((await rosters(claim))[HEAT_1]!)).toEqual(["Bo"]);
+  // Only on this Round: the same seat id on another Round is another Roster entry.
+  await laptop(claim, { ...anna, roundId: FINAL });
+  expect(await update(host)).toMatchObject({ roundId: FINAL, roster: { entries: [{ seat: anna.seat }] } });
+});
+
+test("adding and removing survive a Durable Object restart, the hidden laptop included", async () => {
+  const { claim, host } = await claimed();
+  const [anna, bo] = [presence(), presence({ name: "Bo" })];
+  const annasLaptop = await laptop(claim, anna);
+  await update(host);
+  await laptop(claim, bo);
+  await update(host);
+  await rosterCommand(host, { t: "add-by-hand", roundId: HEAT_1, name: "Cleo" });
+  await rosterCommand(host, { t: "remove-entry", roundId: HEAT_1, seat: anna.seat });
+
+  await worker.getWorker().evictDurableObject("Competition", { name: claim.joinCode, webSockets: "close" });
+  await annasLaptop.closed;
+
+  expect((await rosters(claim))[HEAT_1]!.entries).toEqual([
+    { seat: bo.seat, name: "Bo", revision: bo.revision, online: false },
+    { seat: expect.any(String), name: "Cleo", revision: null, online: false },
+  ]);
+  const back = await connect(worker, claim.joinCode, "host");
+  back.send({ t: "host", hostSecret: claim.hostSecret });
+  await back.next();
+  await laptop(claim, anna);
+  await laptop(claim, bo);
+  expect((await update(back)).roster.entries.map((entry) => [entry.name, entry.online])).toEqual([
+    ["Bo", true],
+    ["Cleo", false],
+  ]);
+});
+
+test("adding and removing need the Host secret", async () => {
+  const { claim, host } = await claimed();
+  const anna = presence();
+  await laptop(claim, anna);
+  await update(host);
+  const stranger = await connect(worker, claim.joinCode, "host");
+  stranger.send({ t: "host", hostSecret: "not-the-secret" });
+  expect(await stranger.next()).toMatchObject({ t: "host-refused" });
+  const phone = await connect(worker, claim.joinCode, "phone");
+
+  for (const socket of [stranger, phone]) {
+    socket.send({ t: "add-by-hand", roundId: HEAT_1, name: "Mallory" });
+    expect(await socket.next()).toEqual({ v: V, t: "refused", command: "add-by-hand", reason: "host-secret" });
+    socket.send({ t: "remove-entry", roundId: HEAT_1, seat: anna.seat });
+    expect(await socket.next()).toEqual({ v: V, t: "refused", command: "remove-entry", reason: "host-secret" });
+  }
+  await expect(host.next(500)).rejects.toThrow(/No message/);
+  expect(names((await rosters(claim))[HEAT_1]!)).toEqual(["Anna"]);
+});
+
+test("adding without a name, or to a Round or removing an entry that isn't there, is refused", async () => {
+  const { claim, host } = await claimed();
+
+  for (const command of [
+    { t: "add-by-hand", roundId: HEAT_1, name: "   " },
+    { t: "add-by-hand", roundId: HEAT_1 },
+    { t: "add-by-hand", roundId: "not-a-round", name: "Cleo" },
+    { t: "remove-entry", roundId: HEAT_1, seat: "no-such-seat" },
+    { t: "remove-entry", roundId: "not-a-round", seat: "no-such-seat" },
+  ]) {
+    host.send(command);
+    expect(await host.next()).toEqual({ v: V, t: "refused", command: command.t, reason: "invalid" });
+  }
+  expect((await rosters(claim))[HEAT_1]).toEqual(EMPTY);
+});

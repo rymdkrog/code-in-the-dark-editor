@@ -13,8 +13,10 @@ import {
   PING,
   PONG,
   V,
+  isByHand,
   type Claim,
   type ClientMessage,
+  type CommandRefusal,
   type CompetitionSummary,
   type ContestantMessage,
   type Lifecycle,
@@ -22,6 +24,7 @@ import {
   type Presence,
   type Role,
   type Roster,
+  type RosterCommand,
   type RosterEntry,
   type ServerMessage,
 } from "../src/protocol/protocol.ts";
@@ -47,10 +50,15 @@ const FOLLOWERS: Role[] = ["stage", "phone"];
 /** Which Round's Roster a Contestant socket is on, and as which seat. */
 type RosterPlace = Pick<Presence, "roundId" | "seat">;
 
+/** A Roster entry as stored: everything but whether its laptop is connected. */
+type StoredEntry = Omit<RosterEntry, "online">;
+
 /** A Round's Roster as stored: everything but who is connected. */
 interface StoredRoster {
-  entries: Omit<RosterEntry, "online">[];
+  entries: StoredEntry[];
   newest: string | null;
+  /** Seats the Host removed while their laptop was connected: hidden for the rest of the Round. */
+  hidden?: string[];
 }
 
 const MAX_NAME_LENGTH = 100;
@@ -94,6 +102,9 @@ export class Competition extends DurableObject<Env> {
         return this.follow(socket);
       case "presence":
         return this.presence(socket, message);
+      case "add-by-hand":
+      case "remove-entry":
+        return this.rosterCommand(socket, message);
     }
     if (isLifecycleCommand(message)) return this.command(socket, message);
   }
@@ -170,8 +181,11 @@ export class Competition extends DurableObject<Env> {
     if (!presence || !claim.rounds.some((round) => round.id === presence.roundId)) return;
 
     const { roundId, seat, name, revision } = presence;
-    const roster = (await this.ctx.storage.get<StoredRoster>(rosterKey(roundId))) ?? structuredClone(EMPTY_ROSTER);
+    const roster = await this.storedRoster(roundId);
+    // A laptop the Host removed stays off, and a seat added by hand has no laptop.
+    if (roster.hidden?.includes(seat)) return;
     const at = roster.entries.findIndex((entry) => entry.seat === seat);
+    if (at !== -1 && isByHand(roster.entries[at]!)) return;
     roster.entries.splice(at === -1 ? roster.entries.length : at, 1, { seat, name, revision });
     if (roster.newest === null || isNewerRevision(revision, roster.newest)) roster.newest = revision;
     await this.ctx.storage.put(rosterKey(roundId), roster);
@@ -179,8 +193,58 @@ export class Competition extends DurableObject<Env> {
     const was = attachment.place;
     socket.serializeAttachment({ ...attachment, place: { roundId, seat } } satisfies Attachment);
     if (was && (was.roundId !== roundId || was.seat !== seat)) await this.rosterChanged(was.roundId);
+    await this.tellRoster(claim, roundId, roster);
+  }
+
+  /** The Host adds a Contestant by hand, or removes an entry. */
+  private async rosterCommand(socket: WebSocket, command: RosterCommand) {
+    const refuse = (reason: CommandRefusal) => send(socket, { v: V, t: "refused", command: command.t, reason });
+    if (!isHost(socket)) return refuse("host-secret");
+    // A socket is a Host's only once the Competition is claimed.
+    const claim = (await this.ctx.storage.get<Claim>("claim"))!;
+    // A command's fields arrive unchecked.
+    const { roundId } = command as { roundId: unknown };
+    if (!claim.rounds.some((round) => round.id === roundId)) return refuse("invalid");
+    const roster = await this.storedRoster(command.roundId);
+    const changed =
+      command.t === "add-by-hand" ? addByHand(roster, command.name) : this.removeEntry(roster, command.roundId, command.seat);
+    if (!changed) return refuse("invalid");
+    await this.ctx.storage.put(rosterKey(command.roundId), roster);
+    await this.tellRoster(claim, command.roundId, roster);
+  }
+
+  /** Takes an entry off a Round's Roster. A laptop still connected is hidden for the rest of the
+   * Round, and its sockets closing no longer change the Roster. False if there's no such entry. */
+  private removeEntry(roster: StoredRoster, roundId: string, seat: unknown): boolean {
+    const at = roster.entries.findIndex((entry) => entry.seat === seat);
+    if (at === -1) return false;
+    const [removed] = roster.entries.splice(at, 1) as [StoredEntry];
+    const laptops = this.laptopsOn(roundId, removed.seat);
+    if (laptops.length) roster.hidden = [...(roster.hidden ?? []), removed.seat];
+    for (const laptop of laptops) {
+      const attachment = laptop.deserializeAttachment() as Attachment;
+      delete attachment.place;
+      laptop.serializeAttachment(attachment);
+    }
+    return true;
+  }
+
+  private async storedRoster(roundId: string): Promise<StoredRoster> {
+    return (await this.ctx.storage.get<StoredRoster>(rosterKey(roundId))) ?? structuredClone(EMPTY_ROSTER);
+  }
+
+  /** Tells every Host a Round's changed Roster, and the followers too if the Round is current. */
+  private async tellRoster(claim: Claim, roundId: string, roster: StoredRoster) {
     this.tellHosts({ v: V, t: "roster", roundId, roster: this.withOnline(roundId, roster) });
     if (roundId === (await this.lifecycle()).current) await this.tellFollowers(claim);
+  }
+
+  /** The open sockets of the laptop on a Round's seat. */
+  private laptopsOn(roundId: string, seat: string): WebSocket[] {
+    return this.ctx.getWebSockets("contestant").filter((socket) => {
+      const { place } = socket.deserializeAttachment() as Attachment;
+      return place?.roundId === roundId && place.seat === seat;
+    });
   }
 
   /** A socket closed: if it was a laptop on a Roster, its entry may now be offline. */
@@ -191,7 +255,7 @@ export class Competition extends DurableObject<Env> {
 
   /** Tells every Host a Round's Roster as it is now, leaving out a socket that is closing. */
   private async rosterChanged(roundId: string, closing?: WebSocket) {
-    const stored = await this.ctx.storage.get<StoredRoster>(rosterKey(roundId));
+    const stored = await this.storedRoster(roundId);
     this.tellHosts({ v: V, t: "roster", roundId, roster: this.withOnline(roundId, stored, closing) });
   }
 
@@ -268,10 +332,25 @@ const rosterKey = (roundId: string) => `roster:${roundId}`;
 /** The presence in a Contestant's message, or null if a field is missing or malformed. */
 function validPresence(message: Partial<Record<keyof Presence, unknown>>): Presence | null {
   const { roundId, seat, name, revision } = message;
-  if (typeof roundId !== "string" || typeof seat !== "string" || typeof name !== "string") return null;
+  if (typeof roundId !== "string" || typeof seat !== "string") return null;
   if (typeof revision !== "string" || !isRevision(revision)) return null;
-  if (!seat || seat.length > MAX_SEAT_LENGTH || !name.trim()) return null;
-  return { roundId, seat, name: name.trim().slice(0, MAX_NAME_LENGTH), revision };
+  if (!seat || seat.length > MAX_SEAT_LENGTH) return null;
+  const valid = validName(name);
+  return valid ? { roundId, seat, name: valid, revision } : null;
+}
+
+/** Adds a Contestant whose laptop never connects. False if the name is blank. */
+function addByHand(roster: StoredRoster, name: unknown): boolean {
+  const valid = validName(name);
+  if (!valid) return false;
+  roster.entries.push({ seat: `hand-${crypto.randomUUID()}`, name: valid, revision: null });
+  return true;
+}
+
+/** A name trimmed and cut to length, or null if it isn't a string or is blank. */
+function validName(name: unknown): string | null {
+  if (typeof name !== "string" || !name.trim()) return null;
+  return name.trim().slice(0, MAX_NAME_LENGTH);
 }
 
 /** Whether the socket has shown the Host secret. */

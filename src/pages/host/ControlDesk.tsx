@@ -6,11 +6,14 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import {
   MAX_DURATION_MS,
   PHASES,
+  isByHand,
   type CompetitionSummary,
+  type HostCommand,
   type Lifecycle,
   type LifecycleCommand,
   type Phase,
   type Roster,
+  type RosterEntry,
 } from "../../protocol/protocol.ts";
 import { stageLink } from "../links.ts";
 import { CopyButton, formatClock, PHASE_LABELS, PhaseChip, RoundClock, VersionFooter } from "../shared.tsx";
@@ -38,7 +41,7 @@ interface Props {
   rosters: Record<string, Roster>;
   online: boolean;
   /** Sends now, or drops the command and returns false. */
-  send(command: LifecycleCommand): boolean;
+  send(command: HostCommand): boolean;
 }
 
 export function ControlDesk({ competition, lifecycle, rosters, online, send }: Props) {
@@ -66,6 +69,17 @@ export function ControlDesk({ competition, lifecycle, rosters, online, send }: P
     const left = formatClock((lifecycle.endsAt ?? 0) - Date.now());
     if (await confirm({ title: `End ${current} now?`, body: `${left} left. Everyone's time is up at once.`, ok: "End now" })) {
       send({ t: "end-early" });
+    }
+  };
+
+  const removeEntry = async (roundId: string, entry: RosterEntry) => {
+    const body = entry.online
+      ? "Their laptop is still connected. It stays hidden for the rest of this Round."
+      : isByHand(entry)
+        ? "They were added by hand."
+        : "If their laptop connects again, they're back on the Roster.";
+    if (await confirm({ title: `Remove ${entry.name} from ${roundName(roundId)}?`, body, ok: "Remove" })) {
+      send({ t: "remove-entry", roundId, seat: entry.seat });
     }
   };
 
@@ -151,7 +165,13 @@ export function ControlDesk({ competition, lifecycle, rosters, online, send }: P
                 </div>
                 <p className="hint">{HINTS[lifecycle.phase]}</p>
               </div>
-              <RosterTable roundName={current!} roster={rosters[lifecycle.current!]} />
+              <RosterTable
+                roundName={current!}
+                roster={rosters[lifecycle.current!]}
+                online={online}
+                onAdd={(name) => send({ t: "add-by-hand", roundId: lifecycle.current!, name })}
+                onRemove={(entry) => removeEntry(lifecycle.current!, entry)}
+              />
             </>
           )}
         </main>

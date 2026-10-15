@@ -108,18 +108,30 @@ export type LifecycleCommand =
   | { t: "reopen-voting" }
   | { t: "back-to-up-next" };
 
+/** The Host's Roster commands. Each needs a socket that has shown the Host secret. */
+export type RosterCommand =
+  /** Adds a Contestant whose laptop never connects: votable, but it gets no Reactions. */
+  | { t: "add-by-hand"; roundId: string; name: string }
+  /** Removes an entry. If its laptop is still connected, it stays hidden for the rest of the Round. */
+  | { t: "remove-entry"; roundId: string; seat: string };
+
+/** Every command a Host sends once it is in. */
+export type HostCommand = LifecycleCommand | RosterCommand;
+
 export type CommandRefusal =
   /** The socket hasn't shown the Host secret. */
   | "host-secret"
   /** The command isn't a transition from where the Current Round is, or its fields are invalid. */
-  | "transition";
+  | "transition"
+  /** A Roster command names a Round or entry that isn't there, or an empty name. */
+  | "invalid";
 
 export type HostMessage =
   /** Sent on every connect: who this Host is. */
   | { v: number; t: "host"; hostSecret: string }
   /** Claims an unclaimed Competition. The Organizer key is a Worker secret that nothing stores. */
   | { v: number; t: "claim"; organizerKey: string; claim: Claim }
-  | ({ v: number } & LifecycleCommand);
+  | ({ v: number } & HostCommand);
 
 /** What a Contestant's laptop says about itself: everything the Roster knows of it. */
 export interface Presence {
@@ -156,11 +168,13 @@ export interface PublicSnapshot {
   roster: PublicEntry[];
 }
 
-/** One laptop on a Round's Roster. It stays listed for the rest of the Round once it appears. */
+/** One laptop on a Round's Roster, or a Contestant the Host added by hand. It stays listed for
+ * the rest of the Round once it appears. */
 export interface RosterEntry {
   seat: string;
   name: string;
-  revision: string;
+  /** The laptop's Revision, or null for an entry added by hand: it has no laptop. */
+  revision: string | null;
   /** Whether the laptop is connected now. */
   online: boolean;
 }
@@ -175,9 +189,13 @@ export interface Roster {
 /** The Roster of a Round nobody has opened yet. */
 export const EMPTY_ROSTER: Roster = { entries: [], newest: null };
 
-/** "Stale" means older than the newest Revision seen for that Round. */
+/** Whether the Host added the entry by hand: it is votable, but no laptop gets its Reactions. */
+export const isByHand = (entry: Pick<RosterEntry, "revision">) => entry.revision === null;
+
+/** "Stale" means older than the newest Revision seen for that Round. An entry added by hand has
+ * no Revision, so it is never stale. */
 export const isStale = (entry: RosterEntry, roster: Roster) =>
-  roster.newest !== null && isNewerRevision(roster.newest, entry.revision);
+  entry.revision !== null && roster.newest !== null && isNewerRevision(roster.newest, entry.revision);
 
 export type ServerMessage =
   | { v: number; t: "pong" }
@@ -198,8 +216,8 @@ export type ServerMessage =
   | ({ v: number; t: "public" } & PublicSnapshot)
   /** The lifecycle changed. Sent to every Host. */
   | { v: number; t: "lifecycle"; lifecycle: Lifecycle }
-  /** A lifecycle command changed nothing. */
-  | { v: number; t: "refused"; command: LifecycleCommand["t"]; reason: CommandRefusal }
+  /** A Host command changed nothing. */
+  | { v: number; t: "refused"; command: HostCommand["t"]; reason: CommandRefusal }
   | { v: number; t: "claim-refused"; reason: ClaimRefusal }
   /** The Competition is claimed, but not with this Host secret. */
   | { v: number; t: "host-refused" };

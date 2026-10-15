@@ -86,9 +86,15 @@ main { padding: 18px 22px 100px; display: grid; gap: 16px; align-content: start;
 table.roster { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 table.roster td, table.roster th { padding: 8px 12px; border-top: 1px solid var(--line); text-align: left; vertical-align: middle; }
 table.roster th { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-top: 0; }
-table.roster td.connection { width: 1%; }
+table.roster td.connection, table.roster td.remove { width: 1%; }
 table.roster tr.off td.name { color: #777; }
 .chip.stale { background: #5c3a0c; color: #ffd08a; }
+.chip.hand { background: #2c3d66; color: #b9cdff; }
+.dot.hand { background: transparent; border: 1.5px dashed #8aa0ff; }
+.x { background: none; border: 0; color: #8a8a96; padding: 2px 6px; border-radius: 6px; }
+.x:hover:enabled { color: #ff8a82; background: #ff5a4f1a; }
+.addrow { display: flex; gap: 6px; margin-top: 8px; }
+.addrow input { flex: 1; min-width: 0; background: #111216; border: 1px solid #ffffff22; border-radius: 8px; padding: 6px 9px; }
 
 dialog { background: #23242b; color: var(--text); border: 1px solid #ffffff22; border-radius: 12px; padding: 18px 20px; width: min(440px, 92vw); box-shadow: 0 20px 60px #000c; }
 dialog::backdrop { background: #0008; }
