@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { decodeClaim } from "../../src/protocol/protocol.ts";
-import { exportRound, newRound, openAudiencePane, openPackage, REFERENCE, turnOnAudience } from "./prep.ts";
+import { downloadFrom, exportRound, newRound, openAudiencePane, openPackage, REFERENCE, turnOnAudience } from "./prep.ts";
 
 const WORKER = "https://citd.example.workers.dev";
 
@@ -102,4 +103,63 @@ test("the prep page shows the editor version in its footer", async ({ page }) =>
   await page.goto("/");
 
   await expect(page.getByText(/^Code in the Dark editor \d+\.\d+\.\d+\+\w+$/)).toBeVisible();
+});
+
+test("a new Competition's Audience layer starts with the last valid Worker URL typed in this browser", async ({
+  page,
+}, testInfo) => {
+  const workerUrl = page.getByLabel("Worker URL");
+  await newRound(page);
+  await turnOnAudience(page, `  ${WORKER}/  `);
+  await workerUrl.blur();
+  // Deleting a URL passes through valid stubs like https://c, which aren't remembered.
+  await workerUrl.fill("https://c");
+  await workerUrl.fill("citd.example");
+  await workerUrl.blur();
+  const saved = await downloadFrom(page.getByRole("button", { name: "Save Competition file" }), testInfo);
+  const file = JSON.parse(readFileSync(saved.path, "utf8"));
+  // Only the Competition's own Worker URL, the invalid one last typed, is in its file.
+  expect(JSON.stringify(file).match(/workers\.dev/g)).toBeNull();
+
+  // Another Worker URL, from a file rather than typed.
+  file.competition.audience.workerUrl = "https://other.example.workers.dev";
+  await page.getByRole("button", { name: "New Competition" }).click();
+  await page.getByRole("button", { name: "Replace without saving" }).click();
+  await page.getByLabel("Open a Competition file").setInputFiles({
+    name: "other.citd-competition.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(file)),
+  });
+  await openAudiencePane(page);
+  await page.getByLabel(/Audience layer/).uncheck();
+  await page.getByLabel(/Audience layer/).check();
+  await expect(workerUrl).toHaveValue("https://other.example.workers.dev");
+
+  await page.getByRole("button", { name: "New Competition" }).click();
+  await page.getByRole("button", { name: "Replace without saving" }).click();
+  await openAudiencePane(page);
+  await page.getByLabel(/Audience layer/).check();
+  await expect(workerUrl).toHaveValue(`${WORKER}/`);
+});
+
+test("without browser storage, the Audience layer starts with an empty Worker URL", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("Storage is off", "SecurityError");
+      },
+    });
+  });
+  const errors: Error[] = [];
+  page.on("pageerror", (error) => errors.push(error));
+
+  await page.goto("/");
+  await turnOnAudience(page, WORKER);
+  await page.getByRole("button", { name: "New Competition" }).click();
+  await page.getByRole("button", { name: "Replace without saving" }).click();
+  await openAudiencePane(page);
+  await page.getByLabel(/Audience layer/).check();
+
+  await expect(page.getByLabel("Worker URL")).toHaveValue("");
+  expect(errors).toEqual([]);
 });

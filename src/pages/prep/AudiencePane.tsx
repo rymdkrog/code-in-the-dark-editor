@@ -3,6 +3,9 @@ import { hostConsoleLink, stageLink } from "../links.ts";
 import { claimRefusal, CopyButton, maskSecret } from "../shared.tsx";
 import { claimOf, workerOrigin, type Audience, type Competition } from "./competition.ts";
 import type { HostConnection } from "./host-socket.ts";
+import { workerUrlMemory } from "./worker-url-memory.ts";
+
+const rememberedWorkerUrl = workerUrlMemory();
 
 interface Props {
   competition: Competition;
@@ -23,7 +26,7 @@ export function AudiencePane({ competition, connection, onChange, onMint }: Prop
         <input
           type="checkbox"
           checked={audience.enabled}
-          onChange={(event) => onChange({ enabled: event.target.checked })}
+          onChange={(event) => onChange(rememberedWorkerUrl.fill(audience, { enabled: event.target.checked }))}
         />
         Audience layer (Reactions, voting, the Stage timer)
       </label>
@@ -38,6 +41,8 @@ export function AudiencePane({ competition, connection, onChange, onMint }: Prop
               value={audience.workerUrl}
               placeholder="https://citd.example.workers.dev"
               onChange={(event) => onChange({ workerUrl: event.target.value })}
+              // Remembered once typed, not per keystroke: deleting a URL passes through valid stubs.
+              onBlur={(event) => rememberedWorkerUrl.remember(event.target.value)}
             />
           </label>
           {!origin && <p className="warn">Not a valid Worker URL: packages export offline.</p>}
