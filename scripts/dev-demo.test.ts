@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { hostConsoleLink, joinLink, stageLink } from "../src/pages/links.ts";
 import { claimOf } from "../src/pages/prep/competition.ts";
 import type { RoundData } from "../src/round-package/round-data.ts";
-import { demoCompetition, organizerKeyIn, refusal } from "./dev-demo.ts";
+import { demoCompetition, demoLinks, organizerKeyIn, refusal } from "./dev-demo.ts";
 
 describe("refusal", () => {
   it("lets a local Worker through", () => {
@@ -76,5 +77,24 @@ describe("demoCompetition", () => {
     const again = demoCompetition("http://localhost:8787", practice);
     expect(again.audience.joinCode).not.toBe(competition.audience.joinCode);
     expect(again.audience.hostSecret).not.toBe(competition.audience.hostSecret);
+  });
+});
+
+describe("demoLinks", () => {
+  const claim = claimOf(demoCompetition("http://localhost:8787", practice));
+  // The control room takes the same claim as the Host console.
+  const controlRoom = `Control room  ${hostConsoleLink("http://localhost:8787", claim).replace("/host/#", "/dev/#")}`;
+
+  it("lists the Host console, the control room, the Stage and the join link", () => {
+    expect(demoLinks("http://localhost:8787", claim)).toEqual([
+      `Host console  ${hostConsoleLink("http://localhost:8787", claim)}`,
+      controlRoom,
+      `Stage         ${stageLink("http://localhost:8787", claim.joinCode, claim.competitionName)}`,
+      `Join          ${joinLink("http://localhost:8787", claim.joinCode)}`,
+    ]);
+  });
+
+  it("opens the control room on localhost, so that its phone subdomains resolve", () => {
+    expect(demoLinks("http://127.0.0.1:8787", claim)[1]).toBe(controlRoom);
   });
 });

@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { hostConsoleLink, joinLink, stageLink } from "../src/pages/links.ts";
+import { controlRoomLink, hostConsoleLink, joinLink, stageLink } from "../src/pages/links.ts";
 import {
   addRound,
   claimOf,
@@ -127,19 +127,26 @@ export async function runDemo(options: DemoOptions) {
   const competitionPath = join(folder, competitionFileName(competition));
   writeFileSync(competitionPath, competitionFile(competition));
 
-  const stage = stageLink(origin, claim.joinCode, claim.competitionName);
   const lines = [
     `Claimed "${claim.competitionName}" on ${origin} as ${claim.joinCode}.`,
     "",
-    `Host console  ${hostConsoleLink(origin, claim)}`,
-    `Stage         ${stage}`,
-    `Join          ${joinLink(origin, claim.joinCode)}`,
+    ...demoLinks(origin, claim),
     "",
     ...competition.rounds.map((round, i) => `${round.name.padEnd(13)} ${pathToFileURL(packages[i]!).href}`),
     "",
     `Open the Stage and drop ${pathToFileURL(competitionPath).href} on it to give it the References.`,
   ];
   return { competition, folder, packages, competitionPath, lines };
+}
+
+/** The links to the pages the Worker at `origin` serves for `claim`. */
+export function demoLinks(origin: string, claim: ReturnType<typeof claimOf>) {
+  return [
+    `Host console  ${hostConsoleLink(origin, claim)}`,
+    `Control room  ${controlRoomLink(origin, claim)}`,
+    `Stage         ${stageLink(origin, claim.joinCode, claim.competitionName)}`,
+    `Join          ${joinLink(origin, claim.joinCode)}`,
+  ];
 }
 
 const root = (path: string) => fileURLToPath(new URL(`../${path}`, import.meta.url));

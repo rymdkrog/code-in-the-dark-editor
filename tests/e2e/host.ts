@@ -2,7 +2,7 @@
 // `wrangler dev` (see playwright.config.ts).
 
 import { pathToFileURL } from "node:url";
-import { expect, type Browser, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Browser, type FrameLocator, type Page, type TestInfo } from "@playwright/test";
 import { hostConsoleLink } from "../../src/pages/links.ts";
 import type { Claim } from "../../src/protocol/protocol.ts";
 import { gateNetwork } from "./no-network-gate.ts";
@@ -37,7 +37,7 @@ export async function claimedConsole(host: Page, link: string) {
 }
 
 /** What the console shows of the Current Round. */
-export const desk = (host: Page) => ({
+export const desk = (host: Page | FrameLocator) => ({
   rail: host.getByRole("navigation", { name: "Rounds" }),
   heading: host.getByRole("heading", { level: 1 }),
   step: host.getByRole("list", { name: "Lifecycle" }).locator('[aria-current="step"]'),

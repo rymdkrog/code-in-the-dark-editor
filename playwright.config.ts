@@ -22,7 +22,8 @@ export default defineConfig({
       command: `npx wrangler dev --port ${WORKER_PORT} --var ORGANIZER_KEY:${WORKER_ORGANIZER_KEY} --show-interactive-dev-session=false`,
       url: `${WORKER_URL}/host/`,
       reuseExistingServer: false,
-      env: { WRANGLER_SEND_METRICS: "false" },
+      // CITD_CONTROL_ROOM puts the dev-only control room in the pages wrangler builds.
+      env: { WRANGLER_SEND_METRICS: "false", CITD_CONTROL_ROOM: "1" },
     },
   ],
   projects: [
