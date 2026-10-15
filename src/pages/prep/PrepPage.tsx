@@ -20,6 +20,7 @@ import {
   roundStatus,
   packageFileName,
   parseCompetitionFile,
+  stampRoundList,
   updateAudience,
   updateRound,
   type Audience,
@@ -46,6 +47,12 @@ type Action =
   | { type: "change-audience"; change: Partial<Audience> };
 
 function reducer(competition: Competition, action: Action): Competition {
+  const next = apply(competition, action);
+  // A Competition opened from a file keeps its own stamp.
+  return action.type === "replace" ? next : stampRoundList(competition, next);
+}
+
+function apply(competition: Competition, action: Action): Competition {
   switch (action.type) {
     case "rename-competition":
       return { ...competition, name: action.name };

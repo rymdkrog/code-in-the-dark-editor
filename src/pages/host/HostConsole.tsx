@@ -57,15 +57,19 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
   const [online, setOnline] = useState(false);
   const [standing, setStanding] = useState<Standing>({ kind: "unknown" });
   const [refusal, setRefusal] = useState<string | null>(null);
+  /** The Current Round this link's Round list leaves out, so the Worker kept its own list. */
+  const [leftOut, setLeftOut] = useState<string | null>(null);
   const socket = useRef<Socket | null>(null);
-  // The claim names the Rounds, so References can be dropped before the claim too.
-  const dropNotice = useReferenceDrop(claim.rounds);
+  // The claim names the Rounds, so References can be dropped before the claim too. Once claimed,
+  // the Worker's Round list may be newer than this link's.
+  const dropNotice = useReferenceDrop(standing.kind === "claimed" ? standing.competition.rounds : claim.rounds);
 
   useEffect(() => {
     const connection = connectSocket(sameOriginSocket(socketPath(claim.joinCode, "host")), {
       open() {
         setOnline(true);
-        connection.send({ v: V, t: "host", hostSecret: claim.hostSecret });
+        const { hostSecret, rounds, roundsChangedAt } = claim;
+        connection.send({ v: V, t: "host", hostSecret, rounds, roundsChangedAt });
       },
       down: () => setOnline(false),
       message(data) {
@@ -77,6 +81,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
             return setStanding({ kind: "refused" });
           case "competition": {
             setRefusal(null);
+            setLeftOut(null);
             const { competition, lifecycle, rosters, tallies } = message;
             return setStanding({ kind: "claimed", competition, lifecycle, rosters, tallies });
           }
@@ -92,6 +97,8 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
             );
           case "claim-refused":
             return setRefusal(REFUSALS[message.reason] ?? REFUSALS.invalid);
+          case "rounds-refused":
+            return setLeftOut(message.roundId);
         }
       },
     });
@@ -129,6 +136,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
           tallies={standing.tallies}
           online={online}
           dropNotice={dropNotice}
+          leftOut={leftOut}
           send={sendCommand}
         />
       );

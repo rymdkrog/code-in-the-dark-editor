@@ -10,6 +10,8 @@ import {
   EMPTY_ROSTER,
   isClaim,
   isReaction,
+  isRoundList,
+  isEpochMs,
   isVoterId,
   parseSocketPath,
   PING,
@@ -54,6 +56,9 @@ interface Attachment {
 
 /** The roles that may follow the Current Round. A Contestant receives Reactions only. */
 const FOLLOWERS: Role[] = ["stage", "phone"];
+
+/** The Round list a Host console link presents, unchecked. */
+type LinkRounds = { rounds?: unknown; roundsChangedAt?: unknown };
 
 /** Which Round's Roster a Contestant socket is on, and as which seat. */
 type RosterPlace = Pick<Presence, "roundId" | "seat">;
@@ -106,7 +111,7 @@ export class Competition extends DurableObject<Env> {
         // A previous-version ping, which the auto-response doesn't match.
         return send(socket, { v: V, t: "pong" });
       case "host":
-        return this.greetHost(socket, message.hostSecret);
+        return this.greetHost(socket, message);
       case "claim":
         return this.claim(socket, message.organizerKey, message.claim);
       case "follow":
@@ -146,11 +151,11 @@ export class Competition extends DurableObject<Env> {
     await this.change(timesUp(lifecycle));
   }
 
-  private async greetHost(socket: WebSocket, hostSecret: unknown) {
+  private async greetHost(socket: WebSocket, link: LinkRounds & { hostSecret: unknown }) {
     const claim = await this.ctx.storage.get<Claim>("claim");
     if (!claim) return send(socket, { v: V, t: "unclaimed" });
-    if (!sameSecret(hostSecret, claim.hostSecret)) return send(socket, { v: V, t: "host-refused" });
-    await this.admitHost(socket, claim);
+    if (!sameSecret(link.hostSecret, claim.hostSecret)) return send(socket, { v: V, t: "host-refused" });
+    await this.admitHost(socket, claim, link);
   }
 
   private async claim(socket: WebSocket, organizerKey: unknown, claim: unknown) {
@@ -167,13 +172,39 @@ export class Competition extends DurableObject<Env> {
     if (existing && !sameSecret(claim.hostSecret, existing.hostSecret)) {
       return send(socket, { v: V, t: "claim-refused", reason: "claimed" });
     }
-    if (!existing) await this.ctx.storage.put("claim", claim);
-    await this.admitHost(socket, existing ?? claim);
-    if (!existing) await this.tellFollowers(claim);
+    if (existing) return this.admitHost(socket, existing, claim);
+    await this.ctx.storage.put("claim", claim);
+    await this.admitHost(socket, claim);
+    await this.tellFollowers(claim);
   }
 
-  private async admitHost(socket: WebSocket, claim: Claim) {
+  /** Lets a socket in as a Host, with the Round list its link presents. */
+  private async admitHost(socket: WebSocket, claim: Claim, link: LinkRounds = {}) {
     socket.serializeAttachment({ ...(socket.deserializeAttachment() as Attachment), host: true } satisfies Attachment);
+    if (!(await this.takeRoundList(socket, claim, link))) send(socket, await this.hostSnapshot(claim));
+  }
+
+  /** A link's newer Round list replaces the stored one, and every Host, the Stage and the phones get
+   * it. One that leaves out the Current Round is refused. False if the stored list stays. */
+  private async takeRoundList(socket: WebSocket, claim: Claim, { rounds, roundsChangedAt }: LinkRounds) {
+    if (!isRoundList(rounds) || !isEpochMs(roundsChangedAt) || roundsChangedAt <= (claim.roundsChangedAt ?? 0)) {
+      return false;
+    }
+    const { current } = await this.lifecycle();
+    if (current && !rounds.some((round) => round.id === current)) {
+      send(socket, await this.hostSnapshot(claim));
+      send(socket, { v: V, t: "rounds-refused", reason: "current-round", roundId: current });
+      return true;
+    }
+    const updated: Claim = { ...claim, rounds, roundsChangedAt };
+    await this.ctx.storage.put("claim", updated);
+    this.tellHosts(await this.hostSnapshot(updated));
+    await this.tellFollowers(updated);
+    return true;
+  }
+
+  /** Everything a Host console shows of the Competition. */
+  private async hostSnapshot(claim: Claim): Promise<ServerMessage> {
     const lifecycle = await this.lifecycle();
     const stored = await this.ctx.storage.get<StoredRoster>(claim.rounds.map((round) => rosterKey(round.id)));
     const rosters = Object.fromEntries(
@@ -181,7 +212,7 @@ export class Competition extends DurableObject<Env> {
     );
     const votes = await this.ctx.storage.get<Votes>(claim.rounds.map((round) => votesKey(round.id)));
     const tallies = Object.fromEntries(claim.rounds.map((round) => [round.id, tally(votes.get(votesKey(round.id)))]));
-    send(socket, { v: V, t: "competition", competition: summary(claim), lifecycle, rosters, tallies });
+    return { v: V, t: "competition", competition: summary(claim), lifecycle, rosters, tallies };
   }
 
   /** A Contestant's laptop says who it is. Before the claim, or without the Contestant token, it

@@ -1,6 +1,14 @@
 // The Competition the Organizer is preparing, and what a Round package is made from.
 
-import { base64url, isJoinCode, JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, type Claim } from "../../protocol/protocol.ts";
+import {
+  base64url,
+  isJoinCode,
+  isEpochMs,
+  JOIN_CODE_ALPHABET,
+  JOIN_CODE_LENGTH,
+  type Claim,
+  type RoundRef,
+} from "../../protocol/protocol.ts";
 import type { RoundData } from "../../round-package/round-data.ts";
 import { revisionTime } from "../../round-package/revision.ts";
 import { slugify } from "../../round-package/slug.ts";
@@ -59,6 +67,9 @@ export interface Competition {
   /** The file prefix the Organizer typed, or null to derive it from the Competition name. */
   prefix: string | null;
   rounds: Round[];
+  /** When a Round was last added or renamed, in epoch ms; the Host console link carries it. None
+   * before the first Round. */
+  roundsChangedAt?: number;
   audience: Audience;
 }
 
@@ -121,8 +132,20 @@ export function claimOf(competition: Competition): Claim {
     joinCode,
     hostSecret,
     contestantToken,
-    rounds: competition.rounds.map(({ id, name }) => ({ id, name })),
+    rounds: roundList(competition),
+    roundsChangedAt: competition.roundsChangedAt,
   };
+}
+
+/** Each Round's id and name, as the Host console link carries them. */
+const roundList = (competition: Competition): RoundRef[] => competition.rounds.map(({ id, name }) => ({ id, name }));
+
+/** Stamps a change to the Round list the Host console link carries, so the Worker takes the
+ * newest list it is shown. Each stamp is later than the last, even if the clock went back. */
+export function stampRoundList(before: Competition, after: Competition, now = Date.now()): Competition {
+  const list = (competition: Competition) => JSON.stringify(roundList(competition));
+  if (list(before) === list(after)) return after;
+  return { ...after, roundsChangedAt: Math.max(now, (before.roundsChangedAt ?? 0) + 1) };
 }
 
 /** Adds Heat N after the other Heats, or the Final at the end. A Competition has one Final. */
@@ -406,6 +429,7 @@ export function parseCompetition(value: unknown): Competition | null {
     !(value.prefix === undefined || value.prefix === null || typeof value.prefix === "string") ||
     !Array.isArray(value.rounds) ||
     !value.rounds.every(isRound) ||
+    !(value.roundsChangedAt === undefined || isEpochMs(value.roundsChangedAt)) ||
     !(value.audience === undefined || isAudience(value.audience))
   ) {
     return null;

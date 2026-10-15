@@ -48,6 +48,7 @@ button { cursor: pointer; }
 
 /* Control desk */
 .offline-banner { position: sticky; top: 0; z-index: 5; background: #5a2a00; color: #ffd6a3; padding: 8px 14px; font-weight: 600; font-size: 13px; }
+.rounds-banner { background: #4a1f24; color: #ffc9cf; padding: 8px 14px; font-size: 13px; }
 .top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: #1a1b20; }
 .top .brand { font-weight: 800; }
 .top .sp { flex: 1; }

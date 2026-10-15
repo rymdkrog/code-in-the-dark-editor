@@ -18,11 +18,15 @@ export async function prepareCompetition(page: Page) {
   await page.getByRole("button", { name: "+ Final" }).click();
   await turnOnAudience(page, WORKER_URL);
   return {
-    hostLink: (await page.getByRole("link", { name: "Open Host console" }).getAttribute("href"))!,
+    hostLink: await hostLinkIn(page),
     stageLink: (await page.getByLabel("Stage link").textContent())!,
     joinCode: (await page.getByLabel("Join code").textContent())!,
   };
 }
+
+/** The Host console link the prep page's open Audience pane hands out now. */
+export const hostLinkIn = async (page: Page) =>
+  (await page.getByRole("link", { name: "Open Host console" }).getAttribute("href"))!;
 
 /** Opens the Host console link and claims the Competition. */
 export async function claimedConsole(host: Page, link: string) {

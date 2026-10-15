@@ -53,6 +53,9 @@ export interface Claim {
   hostSecret: string;
   contestantToken: string;
   rounds: RoundRef[];
+  /** When a Round was last added or renamed in prep, in epoch ms. The Worker keeps the newest Round
+   * list it is shown; a link without one counts as the oldest. */
+  roundsChangedAt?: number;
 }
 
 /** What every Host sees of a claimed Competition. */
@@ -127,8 +130,8 @@ export type CommandRefusal =
   | "invalid";
 
 export type HostMessage =
-  /** Sent on every connect: who this Host is. */
-  | { v: number; t: "host"; hostSecret: string }
+  /** Sent on every connect: who this Host is, and the Round list its link carries. */
+  | ({ v: number; t: "host"; hostSecret: string } & Partial<Pick<Claim, "rounds" | "roundsChangedAt">>)
   /** Claims an unclaimed Competition. The Organizer key is a Worker secret that nothing stores. */
   | { v: number; t: "claim"; organizerKey: string; claim: Claim }
   | ({ v: number } & HostCommand);
@@ -266,6 +269,8 @@ export type ServerMessage =
   /** A Host command changed nothing. */
   | { v: number; t: "refused"; command: HostCommand["t"]; reason: CommandRefusal }
   | { v: number; t: "claim-refused"; reason: ClaimRefusal }
+  /** The link's newer Round list leaves out the Current Round, `roundId`, so the Host keeps the stored one. */
+  | { v: number; t: "rounds-refused"; reason: "current-round"; roundId: string }
   /** The Competition is claimed, but not with this Host secret. */
   | { v: number; t: "host-refused" };
 
@@ -296,13 +301,21 @@ export function isClaim(value: unknown): value is Claim {
     claim.hostSecret.length > 0 &&
     typeof claim.contestantToken === "string" &&
     claim.contestantToken.length > 0 &&
-    Array.isArray(claim.rounds) &&
-    claim.rounds.every(
-      (round: unknown) =>
-        typeof round === "object" &&
-        round !== null &&
-        typeof (round as RoundRef).id === "string" &&
-        typeof (round as RoundRef).name === "string",
-    )
+    isRoundList(claim.rounds) &&
+    (claim.roundsChangedAt === undefined || isEpochMs(claim.roundsChangedAt))
   );
 }
+
+/** Whether a value is a Round list: each Round's id and name. */
+export const isRoundList = (value: unknown): value is RoundRef[] =>
+  Array.isArray(value) &&
+  value.every(
+    (round: unknown) =>
+      typeof round === "object" &&
+      round !== null &&
+      typeof (round as RoundRef).id === "string" &&
+      typeof (round as RoundRef).name === "string",
+  );
+
+/** Whether a value is a time after 1970, in whole epoch ms. */
+export const isEpochMs = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;

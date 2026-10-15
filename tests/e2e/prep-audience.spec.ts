@@ -61,6 +61,8 @@ test("the Audience pane mints credentials locally; packages and the Host console
       { id: opened.round.roundId, name: "Heat 1" },
       { id: expect.any(String), name: "Final" },
     ],
+    // Stamped when the Final was added.
+    roundsChangedAt: expect.any(Number),
   });
   await opened.close();
 });

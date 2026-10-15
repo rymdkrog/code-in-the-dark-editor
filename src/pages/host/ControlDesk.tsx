@@ -57,11 +57,13 @@ interface Props {
   online: boolean;
   /** What the last Competition file or Round packages dropped on the console loaded, for a few seconds. */
   dropNotice: string | null;
+  /** The Current Round this link's Round list leaves out, so the Worker kept its own list. */
+  leftOut: string | null;
   /** Sends now, or drops the command and returns false. */
   send(command: HostCommand): boolean;
 }
 
-export function ControlDesk({ competition, lifecycle, rosters, tallies, online, dropNotice, send }: Props) {
+export function ControlDesk({ competition, lifecycle, rosters, tallies, online, dropNotice, leftOut, send }: Props) {
   const [confirm, confirmation] = useConfirm(online, lifecycle);
   const roundName = (id: string | null) =>
     competition.rounds.find((round) => round.id === id)?.name ?? "the welcome screen";
@@ -129,6 +131,12 @@ export function ControlDesk({ competition, lifecycle, rosters, tallies, online, 
       {!online && (
         <div className="offline-banner" role="status">
           Connection lost — reconnecting… Controls are paused.
+        </div>
+      )}
+      {leftOut && (
+        <div className="rounds-banner" role="alert">
+          This link's Round list leaves out {roundName(leftOut)}, the Current Round, so the console keeps the Round list it had.
+          Put another Round on the Stage, then open this link again.
         </div>
       )}
       <header className="top">

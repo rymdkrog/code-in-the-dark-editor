@@ -72,7 +72,11 @@ export function AudiencePane({ competition, onChange, onMint }: Props) {
             <div className="links">
               <div>
                 <b>Host console</b>
-                <span className="dim"> — private: it claims the Competition with your Organizer key on first open</span>
+                <span className="dim">
+                  {" "}
+                  — private: it claims the Competition with your Organizer key on first open. Open it again after adding or
+                  renaming a Round.
+                </span>
                 <div className="link-row">
                   <CopyButton className="small-button" text={hostConsoleLink(origin, claimOf(competition))} label="Copy Host console link" />
                   <a href={hostConsoleLink(origin, claimOf(competition))} target="_blank" rel="noreferrer">
