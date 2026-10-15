@@ -4,10 +4,10 @@
 import { pathToFileURL } from "node:url";
 import { expect, type Browser, type Page, type TestInfo } from "@playwright/test";
 import { hostConsoleLink } from "../../src/pages/links.ts";
-import { mintCredentials } from "../../src/pages/prep/competition.ts";
 import type { Claim } from "../../src/protocol/protocol.ts";
 import { gateNetwork } from "./no-network-gate.ts";
-import { enterName, makePackage, PRACTICE, roundIn } from "./package.ts";
+import { makePackage } from "../round-packages.ts";
+import { enterName } from "./package.ts";
 import { newRound, turnOnAudience } from "./prep.ts";
 import { WORKER_ORGANIZER_KEY, WORKER_URL } from "./worker.ts";
 
@@ -46,17 +46,7 @@ export const desk = (host: Page) => ({
   dialog: host.getByRole("dialog"),
 });
 
-export const HEAT = roundIn(PRACTICE).roundId;
-
-/** A Competition of the practice Round and a Final, with fresh credentials. */
-export const newClaim = (): Claim => ({
-  competitionName: "Gothenburg 2026",
-  ...mintCredentials(),
-  rounds: [
-    { id: HEAT, name: "Heat 1" },
-    { id: "final00000", name: "Final" },
-  ],
-});
+export { HEAT, newClaim } from "../round-packages.ts";
 
 /** The practice Round as the Competition's Heat 1, exported as Revision `n`. */
 export const heatPackage = (testInfo: TestInfo, claim: Claim, n: number) =>

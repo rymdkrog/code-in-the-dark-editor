@@ -1,14 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { expect, test as base, type Page } from "@playwright/test";
-import { fillTemplate } from "../../src/round-package/fill-template.ts";
-import type { RoundData } from "../../src/round-package/round-data.ts";
+import { PRACTICE } from "../round-packages.ts";
 import { gateNetwork } from "./no-network-gate.ts";
 
-const dist = (file: string) => fileURLToPath(new URL(`../../dist/${file}`, import.meta.url));
-export const PRACTICE = dist("citd-practice.html");
-export const TEMPLATE = dist("core-editor.html");
+export { makePackage, PRACTICE, roundIn, TEMPLATE } from "../round-packages.ts";
 
 // Every test runs behind the no-network gate.
 export const test = base.extend<{ gate: void }>({
@@ -31,17 +26,6 @@ export async function openPackage(page: Page, file = PRACTICE) {
   if (await page.getByRole("dialog").isVisible()) await enterName(page, "Anna");
   // The editor takes focus (back) by itself, so the Contestant can type straight away.
   await expect(page.locator("#editor textarea")).toBeFocused();
-}
-
-/** The Round in a built package's data slot. */
-export const roundIn = (file: string): RoundData =>
-  JSON.parse(readFileSync(file, "utf8").match(/<script type="application\/json" id="round">([\s\S]*?)<\/script>/)![1]!);
-
-/** Builds a Round package from the template: the practice Round with the given changes. */
-export function makePackage(file: string, changes: Partial<RoundData>): string {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, fillTemplate(readFileSync(TEMPLATE, "utf8"), { ...roundIn(PRACTICE), ...changes }));
-  return file;
 }
 
 export async function enterName(page: Page, name: string) {

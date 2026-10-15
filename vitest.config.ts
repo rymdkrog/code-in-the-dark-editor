@@ -4,6 +4,6 @@ import { defineConfig } from "vitest/config";
 // The browser suites in tests/e2e run under Playwright.
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts", "tests/worker/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "scripts/**/*.test.ts", "tests/worker/**/*.test.ts"],
   },
 });

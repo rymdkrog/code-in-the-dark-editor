@@ -54,6 +54,7 @@ npm test           # unit tests, and the Worker's protocol tests in workerd
 npx playwright install chromium firefox webkit
 npm run test:e2e   # the no-network gate, the prep page and the Host console, against dist/; build first
 npm run worker:dev # the Worker and its pages (Host console, Stage, Audience phone) under wrangler dev
+npm run dev:demo   # claims a demo Competition on worker:dev and prints its links and packages; needs build, worker:dev and .dev.vars
 ```
 
 The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and set `ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally), then claim the Competition on the Audience pane or in the Host console, and open the Host console link.
