@@ -23,9 +23,18 @@ export function ControlRoom() {
   }
   return (
     <main className="cr">
-      {frames.map((frame) => (
-        <FramePane key={frame.label} frame={frame} />
-      ))}
+      {frames
+        .filter((frame) => frame.kind !== "phone")
+        .map((frame) => (
+          <FramePane key={frame.label} frame={frame} />
+        ))}
+      <div className="cr-phones">
+        {frames
+          .filter((frame) => frame.kind === "phone")
+          .map((frame) => (
+            <FramePane key={frame.label} frame={frame} />
+          ))}
+      </div>
     </main>
   );
 }
@@ -43,7 +52,9 @@ function FramePane({ frame }: { frame: Frame }) {
         </a>
         <button onClick={reload}>Reload</button>
       </header>
-      <iframe key={loads} src={frame.src} title={frame.label} />
+      <div className="cr-screen">
+        <iframe key={loads} src={frame.src} title={frame.label} />
+      </div>
     </section>
   );
 }
