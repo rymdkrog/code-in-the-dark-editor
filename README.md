@@ -56,7 +56,7 @@ npm run test:e2e   # the no-network gate, the prep page and the Host console, ag
 npm run worker:dev # the Worker and its pages (Host console, Stage, Audience phone) under wrangler dev
 ```
 
-The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and set `ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally) and open the Host console link.
+The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and set `ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally), then claim the Competition on the Audience pane or in the Host console, and open the Host console link.
 
 Double-click `dist/citd-practice.html` to try the editor. `scripts/make-practice-fixture.ts` regenerates the practice Reference and asset from their sources in `fixtures/practice/`.
 

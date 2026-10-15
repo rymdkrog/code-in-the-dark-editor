@@ -5,7 +5,6 @@ import {
   socketPath,
   V,
   type Claim,
-  type ClaimRefusal,
   type CompetitionSummary,
   type HostCommand,
   type Lifecycle,
@@ -14,7 +13,7 @@ import {
   type Tally,
 } from "../../protocol/protocol.ts";
 import { sameOriginSocket } from "../links.ts";
-import { maskSecret, VersionFooter } from "../shared.tsx";
+import { claimRefusal, maskSecret, VersionFooter } from "../shared.tsx";
 import { useReferenceDrop } from "../use-references.ts";
 import { ControlDesk } from "./ControlDesk.tsx";
 
@@ -30,14 +29,6 @@ type Standing =
       rosters: Record<string, Roster>;
       tallies: Record<string, Tally>;
     };
-
-const REFUSALS: Record<ClaimRefusal, string> = {
-  "organizer-key": "That Organizer key is wrong.",
-  "no-organizer-key": "This Worker has no Organizer key set, so nothing can be claimed. Set the ORGANIZER_KEY secret on the Worker.",
-  claimed:
-    "This Join code is already claimed with another Host secret. Use the Host console link of the Competition that claimed it.",
-  invalid: "This link's claim is incomplete. Copy the Host console link from the prep page again.",
-};
 
 export function HostConsole() {
   const [claim] = useState(() => decodeClaim(location.hash));
@@ -96,7 +87,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
               was.kind === "claimed" ? { ...was, tallies: { ...was.tallies, [message.roundId]: message.tally } } : was,
             );
           case "claim-refused":
-            return setRefusal(REFUSALS[message.reason] ?? REFUSALS.invalid);
+            return setRefusal(claimRefusal(message.reason));
           case "rounds-refused":
             return setLeftOut(message.roundId);
         }

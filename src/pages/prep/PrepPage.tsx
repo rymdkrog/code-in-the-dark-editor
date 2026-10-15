@@ -30,6 +30,7 @@ import {
 } from "./competition.ts";
 import { download, fetchTemplate } from "./files.ts";
 import { HandoutPane } from "./HandoutPane.tsx";
+import { useHostSocket } from "./host-socket.ts";
 import { RoundView, StatusLabel } from "./RoundView.tsx";
 import { loadCompetition, saveCompetition } from "./store.ts";
 
@@ -78,6 +79,8 @@ export function PrepPage() {
   const [pane, setPane] = useState<Pane>({ kind: "competition" });
   const template = useTemplate();
   const storage = useBrowserStorage(competition, (stored) => dispatch({ type: "replace", competition: stored }));
+  // Open whatever the pane: Rounds are added and renamed outside the Audience pane.
+  const connection = useHostSocket(competition);
   const round = pane.kind === "round" ? competition.rounds.find((candidate) => candidate.id === pane.id) : undefined;
   const hasFinal = competition.rounds.some((candidate) => candidate.kind === "final");
   const exported = competition.rounds.filter((candidate) => candidate.revisions.length).length;
@@ -246,6 +249,7 @@ export function PrepPage() {
         ) : pane.kind === "audience" ? (
           <AudiencePane
             competition={competition}
+            connection={connection}
             onChange={(change) => dispatch({ type: "change-audience", change })}
             onMint={() => dispatch({ type: "change-audience", change: mintCredentials() })}
           />

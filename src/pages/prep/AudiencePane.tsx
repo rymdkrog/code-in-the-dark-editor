@@ -1,17 +1,20 @@
-import { useRef } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { hostConsoleLink, stageLink } from "../links.ts";
-import { CopyButton, maskSecret } from "../shared.tsx";
+import { claimRefusal, CopyButton, maskSecret } from "../shared.tsx";
 import { claimOf, workerOrigin, type Audience, type Competition } from "./competition.ts";
+import type { HostConnection } from "./host-socket.ts";
 
 interface Props {
   competition: Competition;
+  connection: HostConnection;
   onChange(change: Partial<Audience>): void;
   onMint(): void;
 }
 
-export function AudiencePane({ competition, onChange, onMint }: Props) {
+export function AudiencePane({ competition, connection, onChange, onMint }: Props) {
   const { audience } = competition;
   const origin = workerOrigin(audience.workerUrl);
+  const claimed = connection.standing.kind === "claimed";
   const stage = origin ? stageLink(origin, audience.joinCode, competition.name) : "";
   return (
     <section className="pane">
@@ -68,14 +71,15 @@ export function AudiencePane({ competition, onChange, onMint }: Props) {
               </tr>
             </tbody>
           </table>
+          {origin && <WorkerStanding connection={connection} joinCode={audience.joinCode} />}
           {origin && (
             <div className="links">
               <div>
                 <b>Host console</b>
                 <span className="dim">
-                  {" "}
-                  — private: it claims the Competition with your Organizer key on first open. Open it again after adding or
-                  renaming a Round.
+                  {claimed
+                    ? " — private: it runs the Competition."
+                    : " — private: it claims the Competition with your Organizer key on first open. Open it again after adding or renaming a Round."}
                 </span>
                 <div className="link-row">
                   <CopyButton className="small-button" text={hostConsoleLink(origin, claimOf(competition))} label="Copy Host console link" />
@@ -98,6 +102,91 @@ export function AudiencePane({ competition, onChange, onMint }: Props) {
         </>
       )}
     </section>
+  );
+}
+
+/** Where the Competition stands on the Worker, as prep's own Host socket hears it. */
+function WorkerStanding({ connection, joinCode }: { connection: HostConnection; joinCode: string }) {
+  const { standing } = connection;
+  switch (standing.kind) {
+    case "off":
+    case "connecting":
+      return <p className="dim standing">Connecting to the Worker…</p>;
+    case "unreachable":
+      return <p className="warn standing">Can't reach the Worker. Still trying: check the Worker URL.</p>;
+    case "refused":
+      return (
+        <p className="problem standing">
+          Join code {joinCode} is claimed with another Host secret, so Round changes here don't reach it. Use the
+          Competition file that claimed it.
+        </p>
+      );
+    case "unclaimed":
+      return <ClaimForm refusal={standing.refusal && claimRefusal(standing.refusal)} onClaim={connection.claim} />;
+    case "claimed": {
+      const leftOut = standing.leftOut && (standing.rounds.find((round) => round.id === standing.leftOut)?.name ?? "a Round");
+      return (
+        <div className="standing">
+          <p>
+            <b>Claimed.</b>
+            <span className="dim"> Rounds you add or rename reach the Host console, the Stage and phones at once.</span>
+          </p>
+          {leftOut && (
+            <div role="alert" className="problem">
+              <p>
+                This Round list leaves out {leftOut}, the Current Round, so the Worker keeps the Round list it had. Put
+                another Round on the Stage, then send it again.
+              </p>
+              <button className="small-button" onClick={connection.sendRounds}>
+                Send the Round list again
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+}
+
+/** Claims the Competition from prep. The Organizer key leaves the field only in the claim, and is cleared then. */
+function ClaimForm({ refusal, onClaim }: { refusal: string | null; onClaim(organizerKey: string): boolean }) {
+  const [key, setKey] = useState("");
+  const [unsent, setUnsent] = useState(false);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!key.trim()) return;
+    const sent = onClaim(key.trim());
+    setUnsent(!sent);
+    if (sent) setKey("");
+  };
+  return (
+    <form className="standing claim" onSubmit={submit}>
+      <p>
+        <b>Not claimed yet.</b>
+        <span className="dim">
+          {" "}
+          Claim it here or on the Host console. The Organizer key is asked for once and never stored.
+        </span>
+      </p>
+      <div className="link-row">
+        <input
+          type="password"
+          autoComplete="off"
+          aria-label="Organizer key"
+          value={key}
+          placeholder="Organizer key, from whoever runs this Worker"
+          onChange={(event) => setKey(event.target.value)}
+        />
+        <button className="small-button" disabled={!key.trim()}>
+          Claim
+        </button>
+      </div>
+      {(unsent || refusal) && (
+        <p className="problem" role="alert">
+          {unsent ? "Not connected to the Worker. Try again in a moment." : refusal}
+        </p>
+      )}
+    </form>
   );
 }
 

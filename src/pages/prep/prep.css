@@ -136,6 +136,9 @@ table.credentials th { text-align: left; font-weight: 600; padding-right: 18px; 
 table.credentials th .dim { display: block; font-weight: 400; font-size: 12px; }
 table.credentials td { word-break: break-all; }
 .join-code { font-size: 20px; letter-spacing: .15em; }
+.standing { display: grid; gap: 6px; margin: 0; font-size: 14px; }
+.standing p { margin: 0; }
+.standing.claim input { flex: 1; min-width: 220px; background: #0004; border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; }
 .links { display: grid; gap: 14px; font-size: 14px; }
 .link-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .link-row a { color: #8fb0ff; font-size: 13px; }
