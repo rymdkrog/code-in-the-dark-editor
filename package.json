@@ -19,6 +19,7 @@
     "test:e2e": "playwright test",
     "worker:dev": "CITD_CONTROL_ROOM=1 wrangler dev",
     "dev:demo": "node scripts/dev-demo.ts",
+    "dev:crowd": "node scripts/dev-crowd.ts",
     "smoke": "node tests/worker/smoke.ts"
   },
   "dependencies": {

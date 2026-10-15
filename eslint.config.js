@@ -60,11 +60,12 @@ export default defineConfig([
   {
     // Each file gets exactly one of these blocks: a later no-restricted-imports replaces an earlier one.
     files: ["src/**", "scripts/**"],
-    ignores: ["src/core/**", "src/enhancement/**", "src/pages/**", "src/round-package/**"],
+    // `npm run dev:crowd` plays Contestants' laptops and Audience phones, so it speaks the protocol too.
+    ignores: ["src/core/**", "src/enhancement/**", "src/pages/**", "src/round-package/**", "scripts/crowd*.ts", "scripts/dev-crowd.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
-        { patterns: [fromModules(["protocol"], "Only enhancement, pages and worker import protocol.")] },
+        { patterns: [fromModules(["protocol"], "Only enhancement, pages, worker and dev:crowd import protocol.")] },
       ],
     },
   },

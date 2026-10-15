@@ -28,22 +28,9 @@ import {
 import { fillTemplate } from "../src/round-package/fill-template.ts";
 import type { RoundData } from "../src/round-package/round-data.ts";
 import { PRACTICE, roundIn, TEMPLATE } from "../tests/round-packages.ts";
-import { WORKER_PORT as E2E_WORKER_PORT } from "../tests/e2e/worker.ts";
 import { openSocket } from "../tests/worker/client.ts";
 import { editorVersion } from "./editor-version.ts";
-
-/** Why the script won't claim on the Worker at `workerUrl`, or null if it will. */
-export function refusal(workerUrl: string, allowRemote: boolean): string | null {
-  if (!workerOrigin(workerUrl)) return `Refusing ${workerUrl}: WORKER_URL isn't an http(s) URL.`;
-  const { hostname, port } = new URL(workerUrl);
-  if (port === String(E2E_WORKER_PORT)) {
-    return `Refusing ${workerUrl}: that's the port \`npm run test:e2e\` runs its Worker on.`;
-  }
-  if (!allowRemote && hostname !== "localhost" && hostname !== "127.0.0.1") {
-    return `Refusing ${workerUrl}: it isn't local. Pass --allow-remote to claim there anyway.`;
-  }
-  return null;
-}
+import { refusal } from "./worker-url.ts";
 
 /** The Organizer key from the environment, else from the text of .dev.vars; null if neither has one. */
 export function organizerKeyIn(env: string | undefined, devVars: string | null): string | null {

@@ -10,7 +10,7 @@ import {
   type RoundRef,
 } from "../../protocol/protocol.ts";
 import type { RoundData } from "../../round-package/round-data.ts";
-import { revisionTime } from "../../round-package/revision.ts";
+import { revisionOf, revisionTime } from "../../round-package/revision.ts";
 import { slugify } from "../../round-package/slug.ts";
 
 /** A Reference or an asset, read from the Organizer's file. */
@@ -239,7 +239,7 @@ export function nextRevision(competition: Competition, round: Round, now: Date):
   const n = (round.revisions.at(-1)?.n ?? 0) + 1;
   return {
     n,
-    stamp: `${n}-${now.toISOString().slice(0, 16).replace(/[-T:]/g, "")}`,
+    stamp: revisionOf(n, now),
     fingerprint: packageFingerprint(competition, round),
   };
 }

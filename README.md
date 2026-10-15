@@ -58,9 +58,12 @@ npm run test:e2e   # the no-network gate, the prep page and the Host console, ag
 npm run worker:dev # the Worker and its pages (Host console, Stage, Audience phone) under wrangler dev
 npm run dev:demo   # claims a demo Competition on worker:dev and prints its links and packages; needs build, worker:dev and .dev.vars
                    # its control room link (/dev/#<claim>) shows the Host console, the Stage and 3 phones (?phones=2 to 4) at once
+npm run dev:crowd -- <Competition file>  # fake Contestants and phones on a claimed Competition, see below
 ```
 
 The Worker needs an Organizer key, the secret a Host types to claim a Competition. For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and set `ORGANIZER_KEY`. In the prep page, turn on the Audience layer, set the Worker URL (`http://localhost:8787` locally), then claim the Competition on the Audience pane or in the Host console, and open the Host console link.
+
+`npm run dev:crowd -- <Competition file>` fills a claimed Competition with fake Contestants and phones, so you can try the Roster, Reactions and voting from one browser. It takes the Join code, Contestant token and Worker URL from the Competition file, such as the one `dev:demo` writes (`WORKER_URL` overrides the URL). The fake Contestants join the first Heat's Roster. The phones send Reactions while the Round is up next, running or at time's up, and each votes once whenever the Host opens voting. `--contestants N` (4) and `--phones M` (12) set how many, `--round` picks another Round by name or id, and `--stale K` gives K of the Contestants an older Revision. Like `dev:demo`, it refuses a Worker that isn't local unless you pass `--allow-remote`. Real laptops and phones can join alongside. Ctrl-C takes the fakes offline.
 
 Double-click `dist/citd-practice.html` to try the editor. `scripts/make-practice-fixture.ts` regenerates the practice Reference and asset from their sources in `fixtures/practice/`.
 

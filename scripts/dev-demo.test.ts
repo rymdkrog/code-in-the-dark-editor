@@ -2,31 +2,7 @@ import { describe, expect, it } from "vitest";
 import { hostConsoleLink, joinLink, stageLink } from "../src/pages/links.ts";
 import { claimOf } from "../src/pages/prep/competition.ts";
 import type { RoundData } from "../src/round-package/round-data.ts";
-import { demoCompetition, demoLinks, organizerKeyIn, refusal } from "./dev-demo.ts";
-
-describe("refusal", () => {
-  it("lets a local Worker through", () => {
-    expect(refusal("http://localhost:8787", false)).toBeNull();
-    expect(refusal("http://127.0.0.1:9000", false)).toBeNull();
-  });
-
-  it("refuses a remote Worker unless --allow-remote is given", () => {
-    expect(refusal("https://citd.example.workers.dev", false)).toBe(
-      "Refusing https://citd.example.workers.dev: it isn't local. Pass --allow-remote to claim there anyway.",
-    );
-    expect(refusal("https://citd.example.workers.dev", true)).toBeNull();
-  });
-
-  it("always refuses the e2e Worker's port", () => {
-    const why = "Refusing http://localhost:8788: that's the port `npm run test:e2e` runs its Worker on.";
-    expect(refusal("http://localhost:8788", false)).toBe(why);
-    expect(refusal("http://localhost:8788", true)).toBe(why);
-  });
-
-  it("refuses what isn't an http(s) URL", () => {
-    expect(refusal("localhost:8787", false)).toBe("Refusing localhost:8787: WORKER_URL isn't an http(s) URL.");
-  });
-});
+import { demoCompetition, demoLinks, organizerKeyIn } from "./dev-demo.ts";
 
 describe("organizerKeyIn", () => {
   it("takes ORGANIZER_KEY over .dev.vars", () => {

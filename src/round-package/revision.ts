@@ -11,6 +11,12 @@ export function revisionTime(stamp: string): string {
   return `${Number(day)} ${MONTHS[Number(month) - 1]} ${hour}:${minute}`;
 }
 
+/** Revision `n`, stamped with the UTC minute of `now`: `3-202610121403`. */
+export const revisionOf = (n: number, now: Date) => `${n}-${now.toISOString().slice(0, 16).replace(/[-T:]/g, "")}`;
+
+/** The same minute stamp with another counter: `2-202610121403` for `3-202610121403` and 2. */
+export const withCounter = (revision: string, n: number) => revision.replace(/^\d+/, String(n));
+
 /** Whether a string is a Revision. */
 export const isRevision = (value: string) => /^\d+-\d{12}$/.test(value);
 
