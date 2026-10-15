@@ -14,9 +14,21 @@ import {
   type Phase,
   type Roster,
   type RosterEntry,
+  type Tally,
 } from "../../protocol/protocol.ts";
 import { stageLink } from "../links.ts";
-import { CopyButton, formatClock, PHASE_LABELS, PhaseChip, RoundClock, VersionFooter } from "../shared.tsx";
+import {
+  CopyButton,
+  entryVotes,
+  formatClock,
+  PHASE_LABELS,
+  PhaseChip,
+  RoundClock,
+  turnoutOf,
+  VersionFooter,
+  voteCount,
+  votesWord,
+} from "../shared.tsx";
 import { rosterStatus, RosterTable } from "./RosterTable.tsx";
 
 /** The phases a Round can't be switched away from without asking, and what switching costs. */
@@ -39,16 +51,20 @@ interface Props {
   lifecycle: Lifecycle;
   /** Every Round's Roster, by Round id. */
   rosters: Record<string, Roster>;
+  /** Every Round's live tally, by Round id: the Host's alone. */
+  tallies: Record<string, Tally>;
   online: boolean;
   /** Sends now, or drops the command and returns false. */
   send(command: HostCommand): boolean;
 }
 
-export function ControlDesk({ competition, lifecycle, rosters, online, send }: Props) {
+export function ControlDesk({ competition, lifecycle, rosters, tallies, online, send }: Props) {
   const [confirm, confirmation] = useConfirm(online, lifecycle);
   const roundName = (id: string | null) =>
     competition.rounds.find((round) => round.id === id)?.name ?? "the welcome screen";
   const current = lifecycle.current === null ? null : roundName(lifecycle.current);
+  const tally = (lifecycle.current && tallies[lifecycle.current]) || {};
+  const counting = lifecycle.phase === "voting" || lifecycle.phase === "results";
 
   const makeCurrent = async (roundId: string | null) => {
     if (roundId === lifecycle.current) return;
@@ -65,6 +81,19 @@ export function ControlDesk({ competition, lifecycle, rosters, online, send }: P
     send({ t: "make-current", roundId });
   };
 
+  /** Votes belong to one run of a Round: a re-run clears them, once the Host says so. */
+  const start = async () => {
+    const turnout = turnoutOf(tally);
+    const ok =
+      !turnout ||
+      (await confirm({
+        title: `Start ${current} again?`,
+        body: `Starting a re-run clears the ${voteCount(turnout)} from its last run.`,
+        ok: "Start and clear votes",
+      }));
+    if (ok) send({ t: "start" });
+  };
+
   const endEarly = async () => {
     const left = formatClock((lifecycle.endsAt ?? 0) - Date.now());
     if (await confirm({ title: `End ${current} now?`, body: `${left} left. Everyone's time is up at once.`, ok: "End now" })) {
@@ -73,11 +102,20 @@ export function ControlDesk({ competition, lifecycle, rosters, online, send }: P
   };
 
   const removeEntry = async (roundId: string, entry: RosterEntry) => {
-    const body = entry.online
+    const laptop = entry.online
       ? "Their laptop is still connected. It stays hidden for the rest of this Round."
       : isByHand(entry)
         ? "They were added by hand."
         : "If their laptop connects again, they're back on the Roster.";
+    const roundTally = tallies[roundId] ?? {};
+    const { count } = entryVotes(roundTally, entry.seat);
+    // Once the Round has votes, the Host is told what removing costs, even when it's nothing.
+    const discarded = count
+      ? ` ${voteCount(count)} for them ${count === 1 ? "is" : "are"} discarded, and those phones go back to “not voted”.`
+      : turnoutOf(roundTally)
+        ? " No votes are discarded."
+        : "";
+    const body = laptop + discarded;
     if (await confirm({ title: `Remove ${entry.name} from ${roundName(roundId)}?`, body, ok: "Remove" })) {
       send({ t: "remove-entry", roundId, seat: entry.seat });
     }
@@ -159,15 +197,16 @@ export function ControlDesk({ competition, lifecycle, rosters, online, send }: P
               </div>
               <Stepper phase={lifecycle.phase} />
               <div className="ctl">
-                <Clock lifecycle={lifecycle} />
+                {counting ? <Turnout tally={tally} /> : <RoundClock lifecycle={lifecycle} className="mono" />}
                 <div className="btns">
-                  <Controls lifecycle={lifecycle} online={online} send={send} endEarly={endEarly} />
+                  <Controls lifecycle={lifecycle} online={online} send={send} start={start} endEarly={endEarly} />
                 </div>
                 <p className="hint">{HINTS[lifecycle.phase]}</p>
               </div>
               <RosterTable
                 roundName={current!}
                 roster={rosters[lifecycle.current!]}
+                tally={counting ? tally : undefined}
                 online={online}
                 onAdd={(name) => send({ t: "add-by-hand", roundId: lifecycle.current!, name })}
                 onRemove={(entry) => removeEntry(lifecycle.current!, entry)}
@@ -181,8 +220,8 @@ export function ControlDesk({ competition, lifecycle, rosters, online, send }: P
   );
 }
 
-function Controls(props: Pick<Props, "lifecycle" | "online" | "send"> & { endEarly(): void }) {
-  const { lifecycle, online, send, endEarly } = props;
+function Controls(props: Pick<Props, "lifecycle" | "online" | "send"> & { start(): void; endEarly(): void }) {
+  const { lifecycle, online, send, start, endEarly } = props;
   const button = (label: ReactNode, command: LifecycleCommand | (() => void), className = "") => (
     <button
       className={`btn ${className}`}
@@ -198,7 +237,7 @@ function Controls(props: Pick<Props, "lifecycle" | "online" | "send"> & { endEar
       return (
         <>
           <Duration durationMs={lifecycle.durationMs} online={online} send={send} />
-          {button(<><Glyph>▶</Glyph>Start Round</>, { t: "start" }, "primary")}
+          {button(<><Glyph>▶</Glyph>Start Round</>, start, "primary")}
         </>
       );
     case "running":
@@ -262,10 +301,15 @@ function Duration({ durationMs, online, send }: { durationMs: number; online: bo
   );
 }
 
-/** Counts down from `endsAt` while running; it keeps counting while the console is offline. */
-function Clock({ lifecycle }: { lifecycle: Lifecycle }) {
-  if (lifecycle.phase === "voting" || lifecycle.phase === "results") return null;
-  return <RoundClock lifecycle={lifecycle} className="mono" />;
+/** How many phones have voted: it takes the clock's place during voting and results. */
+function Turnout({ tally }: { tally: Tally }) {
+  const turnout = turnoutOf(tally);
+  return (
+    <div className="clock mono" role="group" aria-label="Turnout">
+      {turnout}
+      <span className="unit"> {votesWord(turnout)}</span>
+    </div>
+  );
 }
 
 function Stepper({ phase }: { phase: Phase }) {

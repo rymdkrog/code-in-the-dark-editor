@@ -223,6 +223,7 @@ const SNAPSHOT: PublicSnapshot = {
     { id: "seat-bo", name: "Bo", online: false },
     { id: "hand-cleo", name: "Cleo", online: false, handAdded: true },
   ],
+  turnout: 0,
 };
 
 const rosterRow = (phone: Page, name: string) => phone.getByRole("listitem").filter({ hasText: name });
@@ -268,15 +269,90 @@ test("a tap sends one Reaction, bursts at the tap point at once, and buzzes", as
   await expect(page.locator(".burst")).toHaveCount(0);
 });
 
-test("the emoji work while up next, running and at time's up, and not in voting or results", async ({ page }) => {
+test("the emoji work while up next, running and at time's up, and are gone in voting and results", async ({ page }) => {
   const { say } = await scriptedPhone(page, SNAPSHOT);
-  const fire = emojiButtons(page, "Ada").first();
+  const fire = page.getByRole("button", { name: "React 🔥 to Ada" });
 
   for (const phase of ["upcoming", "timesup", "voting", "results", "running"] as const) {
     say({ ...SNAPSHOT, lifecycle: { ...SNAPSHOT.lifecycle, phase } });
-    if (phase === "voting" || phase === "results") await expect(fire).toBeDisabled();
+    if (phase === "voting" || phase === "results") await expect(fire).toHaveCount(0);
     else await expect(fire).toBeEnabled();
   }
+});
+
+const VOTING: PublicSnapshot = { ...SNAPSHOT, lifecycle: { ...SNAPSHOT.lifecycle, phase: "voting", endsAt: null }, turnout: 4, vote: null };
+const voteButton = (phone: Page, name: string) => phone.getByRole("list", { name: "Roster" }).getByRole("button", { name });
+
+test("the voting screen: a big button for every entry, offline and hand-added too, and the turnout but no tally", async ({
+  page,
+}) => {
+  const { sent } = await scriptedPhone(page, VOTING);
+
+  await expect(page.getByRole("heading", { name: "Whose Reveal came closest?" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Roster" }).getByRole("button")).toHaveText(["Ada", "Bo", "Cleo"]);
+  for (const name of ["Ada", "Bo", "Cleo"]) await expect(voteButton(page, name)).toBeEnabled();
+  await expect(page.getByText("4 votes so far")).toBeVisible();
+
+  await voteButton(page, "Cleo").click();
+
+  await expect.poll(() => sent).toEqual([{ v: V, t: "vote", seat: "hand-cleo" }]);
+  // Only the Worker's answer confirms the Vote.
+  await expect(page.getByText("You voted for")).toHaveCount(0);
+});
+
+test("the Worker's answer confirms the Vote; Change my vote shows the names again, and the last pick wins", async ({ page }) => {
+  const { sent, say } = await scriptedPhone(page, VOTING);
+  await expect(voteButton(page, "Ada")).toBeEnabled();
+
+  say({ ...VOTING, turnout: 5, vote: "seat-ada" });
+
+  await expect(page.getByText("✓ You voted for Ada")).toBeVisible();
+  await expect(page.getByText("5 votes so far")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Roster" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Change my vote" }).click();
+  await expect(voteButton(page, "Ada")).toHaveAttribute("aria-pressed", "true");
+  await voteButton(page, "Bo").click();
+  await expect.poll(() => sent).toEqual([{ v: V, t: "vote", seat: "seat-bo" }]);
+  say({ ...VOTING, turnout: 5, vote: "seat-bo" });
+
+  await expect(page.getByText("✓ You voted for Bo")).toBeVisible();
+});
+
+test("a phone whose entry was removed is back to not voted, on a voting screen that follows the live Roster", async ({ page }) => {
+  const { say } = await scriptedPhone(page, { ...VOTING, vote: "seat-ada" });
+  await expect(page.getByText("✓ You voted for Ada")).toBeVisible();
+
+  say({ ...VOTING, roster: VOTING.roster.slice(1), turnout: 3, vote: null });
+
+  await expect(page.getByRole("list", { name: "Roster" }).getByRole("button")).toHaveText(["Bo", "Cleo"]);
+  await expect(page.getByText("3 votes so far")).toBeVisible();
+});
+
+test("while the phone is reconnecting, the voting buttons wait for the snapshot", async ({ page }) => {
+  const { drop } = await scriptedPhone(page, VOTING);
+  await expect(voteButton(page, "Ada")).toBeEnabled();
+
+  await drop();
+
+  await expect(page.getByRole("status")).toHaveText("Reconnecting…");
+  for (const button of await page.getByRole("list", { name: "Roster" }).getByRole("button").all()) {
+    await expect(button).toBeDisabled();
+  }
+});
+
+test("at results the phone shows its own pick, or that it didn't vote, and never a ranking", async ({ page }) => {
+  const results: PublicSnapshot = { ...VOTING, lifecycle: { ...VOTING.lifecycle, phase: "results" } };
+  const { say } = await scriptedPhone(page, { ...results, vote: "seat-bo" });
+
+  await expect(page.getByRole("heading", { name: "Voting closed · Eyes on the Stage" })).toBeVisible();
+  await expect(page.getByText("You picked Bo")).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(0);
+  await expect(page.getByText(/\d+ votes?\b/)).toHaveCount(0);
+
+  say({ ...results, vote: null });
+
+  await expect(page.getByText("You didn't vote this Round")).toBeVisible();
 });
 
 test("while the phone is reconnecting, the emoji wait for the snapshot", async ({ page }) => {

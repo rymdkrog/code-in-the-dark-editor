@@ -1,7 +1,7 @@
 // Small pieces the prep page and the Worker's pages share.
 
 import { useEffect, useReducer, useState } from "react";
-import type { Lifecycle, Phase } from "../protocol/protocol.ts";
+import type { Lifecycle, Phase, Tally } from "../protocol/protocol.ts";
 import { EDITOR_VERSION } from "./version.ts";
 
 export const VersionFooter = ({ className }: { className?: string }) => (
@@ -25,6 +25,21 @@ export function CopyButton({ text, label, className }: { text: string; label: st
 
 /** A secret's first characters, enough to tell two apart, and the rest masked. */
 export const maskSecret = (secret: string) => `${secret.slice(0, 4)}${"•".repeat(16)}`;
+
+/** How many phones voted: each counts once. */
+export const turnoutOf = (tally: Tally) => Object.values(tally).reduce((sum, n) => sum + n, 0);
+
+export const votesWord = (n: number) => (n === 1 ? "vote" : "votes");
+/** "1 vote", "3 votes". */
+export const voteCount = (n: number) => `${n} ${votesWord(n)}`;
+
+/** An entry's votes in a tally, whether it leads (the most votes, if anyone voted), and its
+ * votes as a share of the leaders'. */
+export function entryVotes(tally: Tally, seat: string) {
+  const most = Math.max(0, ...Object.values(tally));
+  const count = tally[seat] ?? 0;
+  return { count, lead: most > 0 && count === most, share: most ? count / most : 0 };
+}
 
 export const PHASE_LABELS: Record<Phase, string> = {
   upcoming: "Up next",

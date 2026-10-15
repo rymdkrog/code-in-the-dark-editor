@@ -2,18 +2,20 @@
 // joined with the public Join code, and drawn at 1920×1080, scaled to fit the window. It shows
 // what the Worker last said, and keeps counting from the last `endsAt` while offline.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { connectSocket } from "../../enhancement/socket.ts";
 import {
   isJoinCode,
   socketPath,
   V,
   type Phase,
+  type PublicEntry,
   type PublicSnapshot,
   type ServerMessage,
+  type Tally,
 } from "../../protocol/protocol.ts";
 import { joinLink, sameOriginSocket } from "../links.ts";
-import { RoundClock, VersionFooter } from "../shared.tsx";
+import { entryVotes, RoundClock, VersionFooter, votesWord } from "../shared.tsx";
 import { Qr } from "./Qr.tsx";
 
 const WIDTH = 1920;
@@ -25,7 +27,9 @@ const POPPED_OUT = "citd-stage";
 type Standing =
   | { kind: "unknown" }
   | { kind: "unclaimed" }
-  | ({ kind: "claimed" } & PublicSnapshot);
+  /** `arriving` is set while the results arrive last to first: only when this connection saw
+   * voting close. A Stage that connects or reconnects at results shows them all at once. */
+  | ({ kind: "claimed"; arriving: boolean } & PublicSnapshot);
 
 export function Stage() {
   const [query] = useState(() => new URLSearchParams(location.search));
@@ -46,10 +50,13 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
   // Null until the first connect succeeds or fails.
   const [online, setOnline] = useState<boolean | null>(null);
   const [standing, setStanding] = useState<Standing>({ kind: "unknown" });
+  // The phase this connection last heard, and whether its results are arriving.
+  const heard = useRef<{ phase?: Phase | null; arriving: boolean }>({ arriving: false });
 
   useEffect(() => {
     const connection = connectSocket(sameOriginSocket(socketPath(joinCode, "stage")), {
       open() {
+        heard.current = { arriving: false };
         setOnline(true);
         connection.send({ v: V, t: "follow" });
       },
@@ -58,8 +65,11 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
         const message = data as ServerMessage;
         if (message?.t === "unclaimed") setStanding({ kind: "unclaimed" });
         if (message?.t === "public") {
-          const { competition, lifecycle, roster } = message;
-          setStanding({ kind: "claimed", competition, lifecycle, roster });
+          const { competition, lifecycle, roster, turnout, tally } = message;
+          const { phase } = lifecycle;
+          const arriving = phase === "results" && (heard.current.arriving || heard.current.phase === "voting");
+          heard.current = { phase, arriving };
+          setStanding({ kind: "claimed", arriving, competition, lifecycle, roster, turnout, tally });
         }
       },
     });
@@ -122,7 +132,7 @@ const KICKERS: Record<Exclude<Phase, "running">, string> = {
   results: "Results",
 };
 
-function Screen({ competition, lifecycle, roster }: PublicSnapshot) {
+function Screen({ competition, lifecycle, roster, turnout, tally, arriving }: PublicSnapshot & { arriving: boolean }) {
   const join = { url: joinLink(location.origin, competition.joinCode), joinCode: competition.joinCode };
   const round = competition.rounds.find(({ id }) => id === lifecycle.current);
   if (!lifecycle.phase || !round) {
@@ -165,6 +175,7 @@ function Screen({ competition, lifecycle, roster }: PublicSnapshot) {
       </>
     );
   }
+  if (lifecycle.phase === "voting") return <VoteNow roundName={round.name} turnout={turnout} {...join} />;
   const clock = lifecycle.phase === "upcoming" || lifecycle.phase === "timesup";
   return (
     <>
@@ -178,19 +189,82 @@ function Screen({ competition, lifecycle, roster }: PublicSnapshot) {
         </div>
         {clock && <RoundClock lifecycle={lifecycle} className="" />}
       </div>
-      <ul className="tiles" aria-label="Roster">
-        {roster.map((entry) => (
-          <li key={entry.id} className="tile">
-            {entry.name}
-          </li>
-        ))}
-      </ul>
-      <JoinFoot {...join} verb={lifecycle.phase === "voting" ? "Vote" : "React"} />
+      {lifecycle.phase === "results" ? (
+        <Results roster={roster} tally={tally ?? {}} arriving={arriving} />
+      ) : (
+        <ul className="tiles" aria-label="Roster">
+          {roster.map((entry) => (
+            <li key={entry.id} className="tile">
+              {entry.name}
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* Reactions are over at results. */}
+      <JoinFoot {...join} verb={lifecycle.phase === "results" ? "Join" : "React"} />
     </>
   );
 }
 
-function JoinFoot({ url, joinCode, verb }: { url: string; joinCode: string; verb: "React" | "Vote" }) {
+/** While voting: the turnout, QR and Join code, and no per-Contestant counts. */
+function VoteNow({ roundName, turnout, url, joinCode }: { roundName: string; turnout: number; url: string; joinCode: string }) {
+  return (
+    <div className="vote-now">
+      <Qr text={url} size={440} />
+      <div>
+        <div className="kicker">Vote now · {roundName}</div>
+        <div className="count" aria-label="Turnout">
+          {turnout}
+        </div>
+        <div className="sub">{votesWord(turnout)} so far</div>
+        <div className="code">{joinCode}</div>
+        <div className="sub">{displayUrl(url)}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Seconds between one vote count's tiles arriving and the next, and the leaders' extra wait. */
+const STEP_S = 1.1;
+const LEADER_WAIT_S = 0.9;
+
+/** Every Roster entry as a tile, most votes first, 0 included, each grown to its count. While
+ * arriving they come last to first, the same counts together, and the joint leaders last,
+ * crowned, with a TIE badge if there's more than one. */
+function Results({ roster, tally, arriving }: { roster: PublicEntry[]; tally: Tally; arriving: boolean }) {
+  const ranked = roster
+    .map((entry, order) => ({ entry, order, ...entryVotes(tally, entry.id) }))
+    .sort((a, b) => b.count - a.count || a.order - b.order);
+  const counts = [...new Set(ranked.map(({ count }) => count))].sort((a, b) => a - b);
+  const delay = (count: number, lead: boolean) =>
+    ({ "--delay": `${counts.indexOf(count) * STEP_S + (lead ? LEADER_WAIT_S : 0)}s` }) as CSSProperties;
+  const leaders = ranked.filter(({ lead }) => lead);
+  return (
+    <>
+      {leaders.length > 1 && (
+        <div className={`tiebadge ${arriving ? "arriving" : ""}`} style={delay(leaders[0]!.count, true)}>
+          TIE
+        </div>
+      )}
+      <ol className={`tiles results ${arriving ? "arriving" : ""}`} aria-label="Results">
+        {ranked.map(({ entry, count, lead, share }) => (
+          <li key={entry.id} className={`tile ${lead ? "lead" : ""}`} style={delay(count, lead)}>
+            <div className="fill" style={{ height: `${share * 100}%` }} />
+            <b className="n">{count}</b>
+            {lead && (
+              <span className="crown" role="img" aria-label="Leader">
+                👑
+              </span>
+            )}
+            <span className="nm">{entry.name}</span>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+function JoinFoot({ url, joinCode, verb }: { url: string; joinCode: string; verb: "React" | "Join" }) {
   return (
     <div className="foot">
       <Qr text={url} size={140} />

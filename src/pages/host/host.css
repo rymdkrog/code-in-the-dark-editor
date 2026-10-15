@@ -104,3 +104,12 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 
 .version { margin-top: auto; padding: 16px 6px 8px; color: #6d6d78; font-size: 11px; }
 .host > .version { text-align: center; }
+
+/* The live tally, during voting and results: the Host's alone */
+.ctl .clock .unit { font-size: .32em; font-weight: 600; color: var(--muted); }
+table.roster td.tally { width: 34%; }
+table.roster td.votes { width: 1%; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+table.roster .bar { height: 8px; border-radius: 4px; background: #ffffff10; overflow: hidden; }
+table.roster .bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+table.roster tr.lead td.name, table.roster tr.lead td.votes { color: #ffd23e; font-weight: 700; }
+table.roster tr.lead .bar i { background: #ffd23e; }

@@ -1,11 +1,12 @@
 // A Round's Roster on the Control desk: who has opened the Round's package, whether their
 // laptop is connected, and which Revision it runs. An entry stays listed for the rest of the
 // Round once it appears, dimmed while offline. The Host adds Contestants by hand below it, and
-// removes entries with ✕.
+// removes entries with ✕. During voting and results it shows the live tally, to the Host only.
 
 import { useState, type FormEvent } from "react";
-import { EMPTY_ROSTER, isByHand, isStale, type Roster, type RosterEntry } from "../../protocol/protocol.ts";
+import { EMPTY_ROSTER, isByHand, isStale, type Roster, type RosterEntry, type Tally } from "../../protocol/protocol.ts";
 import { revisionNumber } from "../../round-package/revision.ts";
+import { entryVotes } from "../shared.tsx";
 
 /** "4 ready · 1 offline · 1 by hand · 1 stale", leaving out what is none, or "nobody yet". */
 export function rosterStatus(roster: Roster = EMPTY_ROSTER): string {
@@ -24,13 +25,15 @@ export function rosterStatus(roster: Roster = EMPTY_ROSTER): string {
 interface Props {
   roundName: string;
   roster?: Roster;
+  /** The Round's live tally, shown during voting and results. */
+  tally?: Tally;
   online: boolean;
   /** Sends the new entry now, or drops it and returns false. */
   onAdd(name: string): boolean;
   onRemove(entry: RosterEntry): void;
 }
 
-export function RosterTable({ roundName, roster = EMPTY_ROSTER, online, onAdd, onRemove }: Props) {
+export function RosterTable({ roundName, roster = EMPTY_ROSTER, tally, online, onAdd, onRemove }: Props) {
   return (
     <section className="roster-section" aria-labelledby="roster-heading">
       <h2 id="roster-heading">
@@ -44,6 +47,7 @@ export function RosterTable({ roundName, roster = EMPTY_ROSTER, online, onAdd, o
             </th>
             <th>Name</th>
             <th>Revision</th>
+            {tally && <th colSpan={2}>Live tally (Host only)</th>}
             <th>
               <span className="visually-hidden">Remove</span>
             </th>
@@ -51,30 +55,11 @@ export function RosterTable({ roundName, roster = EMPTY_ROSTER, online, onAdd, o
         </thead>
         <tbody>
           {roster.entries.map((entry) => (
-            <tr key={entry.seat} className={entry.online || isByHand(entry) ? "" : "off"}>
-              <td className="connection">
-                <Connection entry={entry} />
-              </td>
-              <td className="name">{entry.name}</td>
-              <td>
-                <Revision entry={entry} roster={roster} />
-              </td>
-              <td className="remove">
-                <button
-                  className="x"
-                  aria-label={`Remove ${entry.name}`}
-                  title="Remove from Roster"
-                  disabled={!online}
-                  onClick={() => onRemove(entry)}
-                >
-                  ✕
-                </button>
-              </td>
-            </tr>
+            <Row key={entry.seat} entry={entry} roster={roster} tally={tally} online={online} onRemove={onRemove} />
           ))}
           {!roster.entries.length && (
             <tr>
-              <td colSpan={4} className="muted">
+              <td colSpan={tally ? 6 : 4} className="muted">
                 Nobody has opened {roundName} yet.
               </td>
             </tr>
@@ -83,6 +68,47 @@ export function RosterTable({ roundName, roster = EMPTY_ROSTER, online, onAdd, o
       </table>
       <AddByHand online={online} onAdd={onAdd} />
     </section>
+  );
+}
+
+/** An entry: its connection, name and Revision, its votes while the tally shows, and ✕. The
+ * entries with the most votes lead, if anyone voted. */
+function Row({ entry, roster, tally, online, onRemove }: Pick<Props, "tally" | "online" | "onRemove"> & {
+  entry: RosterEntry;
+  roster: Roster;
+}) {
+  const { count, lead, share } = entryVotes(tally ?? {}, entry.seat);
+  return (
+    <tr className={`${entry.online || isByHand(entry) ? "" : "off"} ${lead ? "lead" : ""}`}>
+      <td className="connection">
+        <Connection entry={entry} />
+      </td>
+      <td className="name">{entry.name}</td>
+      <td>
+        <Revision entry={entry} roster={roster} />
+      </td>
+      {tally && (
+        <>
+          <td className="tally">
+            <div className="bar" aria-hidden="true">
+              <i style={{ width: `${share * 100}%` }} />
+            </div>
+          </td>
+          <td className="votes">{count}</td>
+        </>
+      )}
+      <td className="remove">
+        <button
+          className="x"
+          aria-label={`Remove ${entry.name}`}
+          title="Remove from Roster"
+          disabled={!online}
+          onClick={() => onRemove(entry)}
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
   );
 }
 

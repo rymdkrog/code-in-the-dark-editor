@@ -1,6 +1,6 @@
 // One Durable Object per Competition, addressed by its Join code. Plain WebSocket Hibernation
-// API, no framework. Its storage, not its memory, holds the claim, the lifecycle and the
-// Rosters, so a restart loses nothing. Who is connected is the open sockets, not storage.
+// API, no framework. Its storage, not its memory, holds the claim, the lifecycle, the Rosters
+// and the votes, so a restart loses nothing. Who is connected is the open sockets, not storage.
 
 import { DurableObject } from "cloudflare:workers";
 import {
@@ -10,6 +10,7 @@ import {
   EMPTY_ROSTER,
   isClaim,
   isReaction,
+  isVoterId,
   parseSocketPath,
   PING,
   PONG,
@@ -31,6 +32,7 @@ import {
   type RosterCommand,
   type RosterEntry,
   type ServerMessage,
+  type Tally,
 } from "../src/protocol/protocol.ts";
 import { isNewerRevision, isRevision } from "../src/round-package/revision.ts";
 import type { Env } from "./index.ts";
@@ -44,6 +46,8 @@ interface Attachment {
   host?: true;
   /** Set once a Stage or phone socket has asked to follow the Current Round. */
   follows?: true;
+  /** A phone's voter id, from its `follow`. */
+  voter?: string;
   /** Set once a Contestant socket's presence is on a Roster. */
   place?: RosterPlace;
 }
@@ -56,6 +60,9 @@ type RosterPlace = Pick<Presence, "roundId" | "seat">;
 
 /** A Roster entry as stored: everything but whether its laptop is connected. */
 type StoredEntry = Omit<RosterEntry, "online">;
+
+/** A Round's votes as stored: one seat per voter id. */
+type Votes = Map<string, string>;
 
 /** A Round's Roster as stored: everything but who is connected. */
 interface StoredRoster {
@@ -103,7 +110,9 @@ export class Competition extends DurableObject<Env> {
       case "claim":
         return this.claim(socket, message.organizerKey, message.claim);
       case "follow":
-        return this.follow(socket);
+        return this.follow(socket, message.voter);
+      case "vote":
+        return this.vote(socket, message.seat);
       case "presence":
         return this.presence(socket, message);
       case "add-by-hand":
@@ -170,7 +179,9 @@ export class Competition extends DurableObject<Env> {
     const rosters = Object.fromEntries(
       claim.rounds.map((round) => [round.id, this.withOnline(round.id, stored.get(rosterKey(round.id)))]),
     );
-    send(socket, { v: V, t: "competition", competition: summary(claim), lifecycle, rosters });
+    const votes = await this.ctx.storage.get<Votes>(claim.rounds.map((round) => votesKey(round.id)));
+    const tallies = Object.fromEntries(claim.rounds.map((round) => [round.id, tally(votes.get(votesKey(round.id)))]));
+    send(socket, { v: V, t: "competition", competition: summary(claim), lifecycle, rosters, tallies });
   }
 
   /** A Contestant's laptop says who it is. Before the claim, or without the Contestant token, it
@@ -216,7 +227,43 @@ export class Competition extends DurableObject<Env> {
       command.t === "add-by-hand" ? addByHand(roster, command.name) : this.removeEntry(roster, command.roundId, command.seat);
     if (!changed) return refuse("invalid");
     await this.ctx.storage.put(rosterKey(command.roundId), roster);
+    if (command.t === "remove-entry") await this.discardVotes(command.roundId, command.seat);
     await this.tellRoster(claim, command.roundId, roster);
+  }
+
+  /** A removed entry's votes go with it, and those phones are back to not voted. */
+  private async discardVotes(roundId: string, seat: string) {
+    const votes = await this.votes(roundId);
+    const before = votes.size;
+    for (const [voter, pick] of votes) if (pick === seat) votes.delete(voter);
+    if (votes.size !== before) await this.saveVotes(roundId, votes);
+  }
+
+  /** A phone's Vote counts only while voting, for an entry on the Current Round's Roster, and
+   * replaces its earlier one. */
+  private async vote(socket: WebSocket, seat: unknown) {
+    const { role, voter } = socket.deserializeAttachment() as Attachment;
+    if (role !== "phone" || !voter || typeof seat !== "string") return;
+    const { current, phase } = await this.lifecycle();
+    if (!current || phase !== "voting") return;
+    const roster = await this.ctx.storage.get<StoredRoster>(rosterKey(current));
+    if (!roster?.entries.some((entry) => entry.seat === seat)) return;
+    const votes = await this.votes(current);
+    if (votes.get(voter) === seat) return;
+    votes.set(voter, seat);
+    await this.saveVotes(current, votes);
+    // A claim is all a Round needs to be current.
+    await this.tellFollowers((await this.ctx.storage.get<Claim>("claim"))!);
+  }
+
+  /** Stores a Round's changed votes and tells every Host its tally. */
+  private async saveVotes(roundId: string, votes: Votes) {
+    await this.ctx.storage.put(votesKey(roundId), votes);
+    this.tellHosts({ v: V, t: "tally", roundId, tally: tally(votes) });
+  }
+
+  private async votes(roundId: string): Promise<Votes> {
+    return (await this.ctx.storage.get<Votes>(votesKey(roundId))) ?? new Map();
   }
 
   /** Takes an entry off a Round's Roster. A laptop still connected is hidden for the rest of the
@@ -298,12 +345,14 @@ export class Competition extends DurableObject<Env> {
 
   /** A Stage or phone follows the Current Round from now on. Before the claim it waits, and the
    * claim brings it the snapshot. */
-  private async follow(socket: WebSocket) {
-    if (!this.ctx.getTags(socket).some((role) => FOLLOWERS.includes(role as Role))) return;
-    socket.serializeAttachment({ ...(socket.deserializeAttachment() as Attachment), follows: true } satisfies Attachment);
+  private async follow(socket: WebSocket, voter: unknown) {
+    const attachment = socket.deserializeAttachment() as Attachment;
+    if (!FOLLOWERS.includes(attachment.role)) return;
+    const phone = attachment.role === "phone" && isVoterId(voter);
+    socket.serializeAttachment({ ...attachment, follows: true, ...(phone && { voter }) } satisfies Attachment);
     const claim = await this.ctx.storage.get<Claim>("claim");
     if (!claim) return send(socket, { v: V, t: "unclaimed" });
-    send(socket, await this.publicSnapshot(claim));
+    send(socket, (await this.publicSnapshots(claim))(socket));
   }
 
   private async command(socket: WebSocket, command: LifecycleCommand) {
@@ -314,7 +363,14 @@ export class Competition extends DurableObject<Env> {
     const { rounds } = (await this.ctx.storage.get<Claim>("claim"))!;
     const next = transition(await this.lifecycle(), command, rounds, Date.now());
     if (!next) return send(socket, { v: V, t: "refused", command: command.t, reason: "transition" });
+    // Votes belong to one run of a Round.
+    if (command.t === "start") await this.clearVotes(next.current!);
     await this.change(next);
+  }
+
+  private async clearVotes(roundId: string) {
+    if (!(await this.ctx.storage.delete(votesKey(roundId)))) return;
+    this.tellHosts({ v: V, t: "tally", roundId, tally: {} });
   }
 
   private async lifecycle(): Promise<Lifecycle> {
@@ -341,16 +397,18 @@ export class Competition extends DurableObject<Env> {
   private async tellFollowers(claim: Claim, closing?: WebSocket) {
     const followers = this.ctx.getWebSockets().filter(follows);
     if (!followers.length) return;
-    const snapshot = await this.publicSnapshot(claim, closing);
-    for (const socket of followers) send(socket, snapshot);
+    const snapshotFor = await this.publicSnapshots(claim, closing);
+    for (const socket of followers) send(socket, snapshotFor(socket));
   }
 
-  /** The Current Round's Roster is names, and whether each laptop is connected so phones know
-   * whom they can react to. Revisions are the Host's. */
-  private async publicSnapshot(claim: Claim, closing?: WebSocket): Promise<ServerMessage> {
+  /** Each follower's public snapshot. The Current Round's Roster is names, and whether each
+   * laptop is connected so phones know whom they can react to; Revisions are the Host's. Votes
+   * show as the turnout, plus a phone's own Vote, and every entry's votes on the Stage at results. */
+  private async publicSnapshots(claim: Claim, closing?: WebSocket): Promise<(socket: WebSocket) => ServerMessage> {
     const lifecycle = await this.lifecycle();
     const { current } = lifecycle;
     const stored = current ? await this.ctx.storage.get<StoredRoster>(rosterKey(current)) : undefined;
+    const votes = current ? await this.votes(current) : new Map<string, string>();
     const roster = current
       ? this.withOnline(current, stored, closing).entries.map(
           (entry): PublicEntry => ({
@@ -361,11 +419,25 @@ export class Competition extends DurableObject<Env> {
           }),
         )
       : [];
-    return { v: V, t: "public", competition: summary(claim), lifecycle, roster };
+    const snapshot: ServerMessage = { v: V, t: "public", competition: summary(claim), lifecycle, roster, turnout: votes.size };
+    const finalTally = lifecycle.phase === "results" ? tally(votes) : null;
+    return (socket) => {
+      const { role, voter } = socket.deserializeAttachment() as Attachment;
+      if (role === "phone") return { ...snapshot, vote: (voter && votes.get(voter)) || null };
+      return finalTally ? { ...snapshot, tally: finalTally } : snapshot;
+    };
   }
 }
 
 const rosterKey = (roundId: string) => `roster:${roundId}`;
+const votesKey = (roundId: string) => `votes:${roundId}`;
+
+/** Each seat's votes. */
+function tally(votes: Votes = new Map()): Tally {
+  const counts: Tally = {};
+  for (const seat of votes.values()) counts[seat] = (counts[seat] ?? 0) + 1;
+  return counts;
+}
 
 /** The presence in a Contestant's message, or null if a field is missing or malformed. */
 function validPresence(message: Partial<Record<keyof Presence, unknown>>): Presence | null {

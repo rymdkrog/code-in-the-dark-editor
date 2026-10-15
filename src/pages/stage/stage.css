@@ -61,6 +61,31 @@ body { margin: 0; background: #000; color: #f2f2f2; font: 16px/1.45 system-ui, -
 .st .join-corner { display: flex; align-items: center; gap: 22px; font-size: 30px; color: #b7b7c2; text-align: right; flex: none; }
 .st .join-corner b { display: block; font-size: 54px; color: #f2f2f2; letter-spacing: .12em; }
 
+/* Voting: the turnout, QR and Join code, and no per-Contestant counts */
+.st .vote-now { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 90px; }
+.st .vote-now .count { font-size: 300px; font-weight: 800; line-height: .9; }
+.st .vote-now .sub { font: 48px system-ui; color: #b7b7c2; }
+.st .vote-now .code { margin-top: 40px; font-size: 90px; font-weight: 800; letter-spacing: .14em; color: #3ee6ff; }
+
+/* Results: tiles grown to their counts, arriving last to first, the leaders crowned */
+.st .tiles.results { margin: 0; }
+.st .tiles.results .tile { position: relative; overflow: hidden; flex-direction: column; align-items: center; }
+.st .tile .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #ff3e8a55; }
+.st .tile .n { position: relative; font-size: 90px; font-weight: 800; margin-bottom: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.st .tile .crown { position: relative; font-size: 64px; margin-bottom: 4px; }
+.st .tile .nm { position: relative; }
+.st .tile.lead { border-color: #ffd23e; }
+.st .tile.lead .fill { background: #ffd23e88; }
+.st .tile.lead .n { color: #ffd23e; }
+.st .tiebadge { position: absolute; right: 70px; top: 110px; background: #ffd23e; color: #111; font: 800 80px system-ui; letter-spacing: .1em; padding: 6px 30px; border-radius: 16px; }
+.st .tiles.arriving .tile { animation: arrive .6s ease-out var(--delay) both; }
+.st .tiles.arriving .tile.lead { animation: crown .8s cubic-bezier(.2, 1.6, .4, 1) var(--delay) both; }
+.st .tiles.arriving .tile .fill { animation: grow 1.6s ease-out var(--delay) both; }
+.st .tiebadge.arriving { animation: crown .8s cubic-bezier(.2, 1.6, .4, 1) var(--delay) both; }
+@keyframes arrive { from { opacity: 0; transform: translateY(40px); } }
+@keyframes crown { from { opacity: 0; transform: scale(.6); } }
+@keyframes grow { from { height: 0; } }
+
 /* A Stage link without a Join code */
 .stage-notice { min-height: 100vh; display: grid; place-content: center; text-align: center; padding: 16px; }
 .stage-notice footer { color: #6d6d78; font-size: 11px; margin-top: 24px; }

@@ -151,6 +151,14 @@ export const isReaction = (e: unknown): e is Reaction => REACTIONS.includes(e as
 /** The phases in which phones may react: up next, running and time's up. */
 export const REACTION_PHASES: readonly Phase[] = ["upcoming", "running", "timesup"];
 
+/** A phone's random voter id, kept in its `localStorage`. The Worker keeps one Vote per voter id
+ * per Round, and the last one wins. */
+export const isVoterId = (voter: unknown): voter is string =>
+  typeof voter === "string" && voter.length > 0 && voter.length <= 64;
+
+/** Each Roster entry's votes in one Round, by seat. An entry nobody voted for is left out. */
+export type Tally = Record<string, number>;
+
 /** One tap on a Roster entry's emoji, with no coalescing. The Worker relays it as is to that
  * seat's laptop, and nowhere else. */
 export interface ReactionMessage {
@@ -168,10 +176,13 @@ export type ContestantMessage = { v: number; t: "presence"; token: string } & Pr
 export type ClientMessage =
   | HostMessage
   | ContestantMessage
-  /** Sent by the Stage and Audience phones on every connect: they follow the Current Round, read-only. */
-  | { v: number; t: "follow" }
+  /** Sent by the Stage and Audience phones on every connect: they follow the Current Round,
+   * read-only. A phone says which voter it is, so its snapshot carries its own Vote. */
+  | { v: number; t: "follow"; voter?: string }
   /** Sent by Audience phones only. */
   | ReactionMessage
+  /** A phone's Vote for a Current Round's Roster entry, only while voting. The last one wins. */
+  | { v: number; t: "vote"; seat: string }
   | { v: number; t: "ping" };
 
 /** A Roster entry as the Stage and phones see it. */
@@ -190,6 +201,12 @@ export interface PublicSnapshot {
   competition: CompetitionSummary;
   lifecycle: Lifecycle;
   roster: PublicEntry[];
+  /** How many phones have voted in the Current Round's run. */
+  turnout: number;
+  /** A phone's own Vote in the Current Round, or null: sent to that phone only. */
+  vote?: string | null;
+  /** Each entry's votes, sent to the Stage only and only at results. Phones never see a ranking. */
+  tally?: Tally;
 }
 
 /** One laptop on a Round's Roster, or a Contestant the Host added by hand. It stays listed for
@@ -228,16 +245,20 @@ export type ServerMessage =
   /** The Competition hasn't been claimed yet. */
   | { v: number; t: "unclaimed" }
   /** The Host is in: the snapshot of the Competition, sent on every connect. Every Round's
-   * Roster, keyed by Round id. */
+   * Roster and live tally, keyed by Round id. */
   | {
       v: number;
       t: "competition";
       competition: CompetitionSummary;
       lifecycle: Lifecycle;
       rosters: Record<string, Roster>;
+      tallies: Record<string, Tally>;
     }
   /** A Round's Roster changed. Sent to every Host. */
   | { v: number; t: "roster"; roundId: string; roster: Roster }
+  /** A Round's votes changed: cast, discarded with an entry, or cleared by a re-run. Sent to every
+   * Host, and only to Hosts. */
+  | { v: number; t: "tally"; roundId: string; tally: Tally }
   /** The Stage's and phones' snapshot. Sent when they follow, and again on every change. */
   | ({ v: number; t: "public" } & PublicSnapshot)
   /** The lifecycle changed. Sent to every Host. */

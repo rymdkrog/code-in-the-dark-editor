@@ -44,6 +44,7 @@ test("before the claim the Stage waits, and the claim brings it the welcome scre
     competition: competition(claim),
     lifecycle: welcome,
     roster: [],
+    turnout: 0,
   });
 });
 
@@ -71,6 +72,7 @@ test("the Stage follows every lifecycle change, and a Stage that connects later 
     competition: competition(claim),
     lifecycle: { current: "heat1aaaaa", phase: "upcoming", durationMs: DEFAULT_DURATION_MS, endsAt: null },
     roster: [],
+    turnout: 0,
   });
   await step(desk, { t: "set-duration", durationMs: 2 * 60_000 });
   expect(await screen.next()).toMatchObject({ lifecycle: { phase: "upcoming", durationMs: 2 * 60_000 } });

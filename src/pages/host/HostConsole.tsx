@@ -11,6 +11,7 @@ import {
   type Lifecycle,
   type Roster,
   type ServerMessage,
+  type Tally,
 } from "../../protocol/protocol.ts";
 import { sameOriginSocket } from "../links.ts";
 import { maskSecret, VersionFooter } from "../shared.tsx";
@@ -21,7 +22,13 @@ type Standing =
   | { kind: "unknown" }
   | { kind: "unclaimed" }
   | { kind: "refused" }
-  | { kind: "claimed"; competition: CompetitionSummary; lifecycle: Lifecycle; rosters: Record<string, Roster> };
+  | {
+      kind: "claimed";
+      competition: CompetitionSummary;
+      lifecycle: Lifecycle;
+      rosters: Record<string, Roster>;
+      tallies: Record<string, Tally>;
+    };
 
 const REFUSALS: Record<ClaimRefusal, string> = {
   "organizer-key": "That Organizer key is wrong.",
@@ -67,14 +74,18 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
             return setStanding({ kind: "refused" });
           case "competition": {
             setRefusal(null);
-            const { competition, lifecycle, rosters } = message;
-            return setStanding({ kind: "claimed", competition, lifecycle, rosters });
+            const { competition, lifecycle, rosters, tallies } = message;
+            return setStanding({ kind: "claimed", competition, lifecycle, rosters, tallies });
           }
           case "lifecycle":
             return setStanding((was) => (was.kind === "claimed" ? { ...was, lifecycle: message.lifecycle } : was));
           case "roster":
             return setStanding((was) =>
               was.kind === "claimed" ? { ...was, rosters: { ...was.rosters, [message.roundId]: message.roster } } : was,
+            );
+          case "tally":
+            return setStanding((was) =>
+              was.kind === "claimed" ? { ...was, tallies: { ...was.tallies, [message.roundId]: message.tally } } : was,
             );
           case "claim-refused":
             return setRefusal(REFUSALS[message.reason] ?? REFUSALS.invalid);
@@ -112,6 +123,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
           competition={standing.competition}
           lifecycle={standing.lifecycle}
           rosters={standing.rosters}
+          tallies={standing.tallies}
           online={online}
           send={sendCommand}
         />

@@ -71,3 +71,16 @@ button { cursor: pointer; touch-action: manipulation; }
 .reconnecting { position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 1; background: #3a2a10; color: #ffcf7a; border: 1px solid #ffb54766; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 
 .version { margin-top: auto; padding: 12px 16px 20px; text-align: center; color: #6d6d78; font-size: 11px; }
+
+/* Voting: its own screen, one big button per entry, and the turnout but never the tally. */
+.question { margin: 0; padding: 14px 16px 2px; font-size: 18px; font-weight: 800; }
+.picks { list-style: none; margin: 0; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.picks button { width: 100%; background: var(--panel); border: 0; border-radius: 18px; padding: 20px; font-weight: 900; font-size: 22px; text-align: left; overflow-wrap: anywhere; }
+.picks button.dim { opacity: .55; }
+.picks button:active:not(:disabled) { transform: scale(.98); background: #ffffff22; }
+.picks button:disabled { opacity: .35; cursor: not-allowed; }
+.turnout { margin: 0; padding: 4px 16px 12px; text-align: center; }
+.voted { margin: 0; font-size: 30px; }
+.voted .tick { font-size: inherit; }
+.eyes { font-size: 54px; line-height: 1; }
+.pick { color: var(--text); }

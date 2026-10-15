@@ -239,7 +239,7 @@ test("the Stage and phones see the Current Round's Roster: names only, and nobod
 
   const phone = await connect(worker, claim.joinCode, "phone");
   phone.send({ t: "follow" });
-  expect(await phone.next()).toEqual(renamed);
+  expect(await phone.next()).toEqual({ ...renamed, vote: null });
 });
 
 /** The names on a Roster, in order. */
