@@ -25,11 +25,13 @@ interface Props {
   round: Round;
   /** The template's size, once it has loaded; export waits for it. */
   templateSize: number | null;
+  /** Why the Worker doesn't hold this Round's Stage copy, or null. It doesn't stop an export. */
+  stageCopyProblem: string | null;
   onChange(change: (round: Round) => Round): void;
   onExport(): void;
 }
 
-export function RoundView({ competition, round, templateSize, onChange, onExport }: Props) {
+export function RoundView({ competition, round, templateSize, stageCopyProblem, onChange, onExport }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<string[]>([]);
   const [importNotices, setImportNotices] = useState<string[]>([]);
@@ -119,9 +121,10 @@ export function RoundView({ competition, round, templateSize, onChange, onExport
           {round.revisions.length ? "Re-export" : "Export"}
         </button>
       </div>
-      {status.kind === "problem" && (
-        <Notices className="problem topbar-problems" notices={status.problems} />
-      )}
+      <Notices
+        className="problem topbar-problems"
+        notices={[...(status.kind === "problem" ? status.problems : []), ...(stageCopyProblem ? [stageCopyProblem] : [])]}
+      />
       <div className="work">
         <section>
           <h3>Reference</h3>

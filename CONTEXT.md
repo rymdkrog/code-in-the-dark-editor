@@ -102,6 +102,10 @@ _Avoid_: Plugin, add-on, online mode
 The separate screen at the venue showing shared Competition state — the timer, voting — rather than any one Contestant's editor.
 _Avoid_: Projector view, dashboard, scoreboard
 
+**Stage copy**:
+A Round's Reference scaled down to fit the Stage, which the prep page keeps on the Worker. The Worker gives it out only while that Round is current and voting. Dropping the Competition file on the Stage is the fallback.
+_Avoid_: Thumbnail, preview
+
 **Join code**:
 The short public code the Audience uses to join a Competition; one code covers every Round of the Competition.
 _Avoid_: Session code, PIN, room

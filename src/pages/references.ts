@@ -1,6 +1,8 @@
-// References reach the Stage locally: the Organizer drops the Competition file or Round packages
-// on the Stage or the Host console, and the References are kept in this origin's IndexedDB, by
-// Round id. Nothing here talks to the Worker, so it never gets an image, and phones never do.
+// References reach the Stage through the Worker: prep keeps a small Stage copy of each Round's
+// Reference there (prep/stage-copy.ts), given out only while its Round is current and voting.
+// This module is the fallback: the Organizer drops the Competition file or Round packages on the
+// Stage or the Host console, and the References are kept in this origin's IndexedDB, by Round id.
+// Nothing here talks to the Worker, and phones never get a Reference.
 
 import type { CompetitionSummary } from "../protocol/protocol.ts";
 import { roundSlotJson } from "../round-package/fill-template.ts";

@@ -24,7 +24,7 @@ const CHECKLIST: { group: string; items: string[] }[] = [
     group: "If Enhancements are on",
     items: [
       "Every seat is on the Host console's Roster, with no stale-Revision flags.",
-      "The Competition file is loaded on the Stage machine.",
+      "Prep was open with the Audience layer on after the last Reference changed, so the Stage gets each Round's Reference from the Worker. If it wasn't, drop the Competition file on the Stage.",
     ],
   },
   { group: "The room", items: ["Contestants can see the Stage clock from their seats, or a second display faces them."] },

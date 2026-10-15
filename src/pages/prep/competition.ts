@@ -267,6 +267,10 @@ function hashedAsset(asset: Asset): Asset {
   return hashed;
 }
 
+/** A fingerprint of the Stage copy made from a Reference: the same image makes the same copy.
+ * Bump the `s1` when the way copies are made changes, so the Worker's copies are made again. */
+export const stageCopyFingerprint = (reference: Asset) => `s1-${hashedAsset(reference).dataUri}`;
+
 /**
  * A fingerprint of everything a Round's package is made from, bar its Revision: the same
  * fingerprint means exporting again would make the same package under the same file name.

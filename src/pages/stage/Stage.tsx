@@ -51,8 +51,10 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
   // Null until the first connect succeeds or fails.
   const [online, setOnline] = useState<boolean | null>(null);
   const [standing, setStanding] = useState<Standing>({ kind: "unknown" });
-  // The phase this connection last heard, and whether its results are arriving.
-  const heard = useRef<{ phase?: Phase | null; arriving: boolean }>({ arriving: false });
+  // The Round and phase this connection last heard, and whether its results are arriving.
+  const heard = useRef<{ roundId?: string | null; phase?: Phase | null; arriving: boolean }>({ arriving: false });
+  // The Stage copy the Worker gave this connection while voting, for one Round.
+  const [copy, setCopy] = useState<{ roundId: string; image: string } | null>(null);
 
   useEffect(() => {
     const connection = connectSocket(sameOriginSocket(socketPath(joinCode, "stage")), {
@@ -65,11 +67,19 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
       message(data) {
         const message = data as ServerMessage;
         if (message?.t === "unclaimed") setStanding({ kind: "unclaimed" });
+        if (message?.t === "stage-copy") setCopy({ roundId: message.roundId, image: message.image });
         if (message?.t === "public") {
           const { competition, lifecycle, roster, turnout, tally } = message;
-          const { phase } = lifecycle;
+          const { current, phase } = lifecycle;
           const arriving = phase === "results" && (heard.current.arriving || heard.current.phase === "voting");
-          heard.current = { phase, arriving };
+          // Once per voting phase: when voting opens, or when this connection first hears it.
+          const votingOpened = phase === "voting" && (heard.current.phase !== "voting" || heard.current.roundId !== current);
+          if (votingOpened) {
+            // A copy from an earlier voting phase may have been cleared since.
+            setCopy(null);
+            connection.send({ v: V, t: "ask-stage-copy", roundId: current! });
+          }
+          heard.current = { roundId: current, phase, arriving };
           setStanding({ kind: "claimed", arriving, competition, lifecycle, roster, turnout, tally });
         }
       },
@@ -79,8 +89,11 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
 
   const claimed = standing.kind === "claimed" ? standing : null;
   const dropNotice = useReferenceDrop(claimed?.competition.rounds ?? []);
-  // Only read while voting: it's the one screen that shows it.
-  const reference = useStoredReference(claimed?.lifecycle.phase === "voting" ? claimed.lifecycle.current : null);
+  // Only read while voting: it's the one screen that shows it. The Worker's copy comes first, then
+  // the Reference dropped in this browser.
+  const voting = claimed?.lifecycle.phase === "voting" ? claimed.lifecycle.current : null;
+  const stored = useStoredReference(voting);
+  const reference = (voting && copy?.roundId === voting ? copy.image : null) ?? stored;
 
   return (
     <Frame>

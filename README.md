@@ -30,7 +30,7 @@ The prep page's Hand out & checklist pane shows the same list.
   - Go fullscreen, turn on Do Not Disturb, disable sleep and plug in power.
 - **If Enhancements are on**
   - Every seat is on the Host console's Roster, with no stale-Revision flags.
-  - The Competition file is loaded on the Stage machine.
+  - Prep was open with the Audience layer on after the last Reference changed, so the Stage gets each Round's Reference from the Worker. If it wasn't, drop the Competition file on the Stage.
 - **The room**
   - Contestants can see the Stage clock from their seats, or a second display faces them.
 - **Spare laptop**

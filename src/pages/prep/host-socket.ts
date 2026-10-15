@@ -1,12 +1,13 @@
 // The prep page's own Host socket: it lets the Organizer claim the Competition from prep, and keeps
-// the Worker's Round list current as Rounds are added or renamed. It never runs the Competition:
-// lifecycle, Roster and tally messages are the Host console's.
+// the Worker's Round list and Stage copies current as Rounds are added, renamed or given a new
+// Reference. It never runs the Competition: lifecycle, Roster and tally messages are the Host console's.
 
 import { useEffect, useEffectEvent, useState } from "react";
 import { connectSocket, type Socket } from "../../enhancement/socket.ts";
-import { socketPath, V, type ClaimRefusal, type RoundRef, type ServerMessage } from "../../protocol/protocol.ts";
+import { socketPath, V, type ClaimRefusal, type RoundRef, type ServerMessage, type StageCopies } from "../../protocol/protocol.ts";
 import { socketOrigin } from "../../round-package/fill-template.ts";
-import { claimOf, workerOrigin, type Audience, type Competition } from "./competition.ts";
+import { claimOf, stageCopyFingerprint, workerOrigin, type Audience, type Competition } from "./competition.ts";
+import { makeStageCopy, stageCopyPlan, stageCopyProblem, type StageCopyRefusal, type StageCopySync } from "./stage-copy.ts";
 
 /** Where the Competition stands, as far as prep knows. */
 export type Standing =
@@ -74,7 +75,7 @@ export function useHostSocket(competition: Competition) {
   const { hostSecret } = audience;
   // The socket, and where it stands, belong to one URL and Host secret.
   const key = url && `${url} ${hostSecret}`;
-  const [connection, setConnection] = useState<{ key: string; socket: Socket; standing: Standing } | null>(null);
+  const [connection, setConnection] = useState<Connection | null>(null);
   const current = connection?.key === key ? connection : null;
 
   const sendRounds = (socket = current?.socket) => {
@@ -87,7 +88,7 @@ export function useHostSocket(competition: Competition) {
     if (!url) return;
     const key = `${url} ${hostSecret}`;
     const on = (event: unknown) =>
-      setConnection((was) => (was?.key === key ? { ...was, standing: standingAfter(was.standing, event) } : was));
+      setConnection((was) => (was?.key === key ? { ...was, ...stageCopiesAfter(was, event), standing: standingAfter(was.standing, event) } : was));
     const socket = connectSocket(url, {
       open() {
         on({ t: "open" });
@@ -96,7 +97,7 @@ export function useHostSocket(competition: Competition) {
       down: () => on({ t: "down" }),
       message: on,
     });
-    setConnection({ key, socket, standing: CONNECTING });
+    setConnection({ key, socket, standing: CONNECTING, held: null, sync: { sent: {}, refusals: {} }, latest: {} });
     return () => {
       socket.close();
       // Turned back on with the same URL and Host secret, it must not show the closed socket's standing.
@@ -105,6 +106,26 @@ export function useHostSocket(competition: Competition) {
   }, [url, hostSecret]);
 
   useEffect(() => sendRoundsFromEffect(), [competition.roundsChangedAt]);
+
+  // Brings the Worker's Stage copies up to date whenever it says which it holds, or a Reference changes.
+  useEffect(() => {
+    if (!current?.held) return;
+    const { socket, sync, latest } = current;
+    const plan = stageCopyPlan(competition, current.held, sync);
+    for (const roundId of plan.clear) {
+      sync.sent[roundId] = latest[roundId] = null;
+      socket.send({ v: V, t: "clear-stage-copy", roundId });
+    }
+    for (const { roundId, fingerprint, reference } of plan.set) {
+      sync.sent[roundId] = latest[roundId] = fingerprint;
+      makeStageCopy(reference.dataUri).then(
+        // A copy made after the Reference was replaced or removed would put the old one back.
+        (image) => latest[roundId] === fingerprint && socket.send({ v: V, t: "set-stage-copy", roundId, fingerprint, image }),
+        () =>
+          setConnection((was) => (was?.socket === socket ? refuse(was, roundId, fingerprint, "unreadable") : was)),
+      );
+    }
+  }, [current, competition]);
 
   // The Worker tells nobody unadmitted about a claim, and a refused list isn't retried by itself.
   // Asking again on coming back to prep picks up a claim made on the Host console, or a Current
@@ -117,12 +138,67 @@ export function useHostSocket(competition: Competition) {
 
   return {
     standing: current?.standing ?? (key ? CONNECTING : OFF),
+    /** Why a Round's Stage copy for its Reference as it is now didn't reach the Worker, or null. */
+    stageCopyProblem: (roundId: string): string | null => {
+      const reference = competition.rounds.find(({ id }) => id === roundId)?.reference;
+      const refusal = current?.sync.refusals[roundId];
+      return reference && refusal?.fingerprint === stageCopyFingerprint(reference) ? stageCopyProblem(refusal.reason) : null;
+    },
     /** Sends the Round list again, say once the Current Round it left out is no longer current. */
     sendRounds: () => sendRounds(),
     /** Claims the Competition. The Organizer key goes into this one message and nowhere else. */
     claim: (organizerKey: string) =>
       current?.socket.send({ v: V, t: "claim", organizerKey, claim: claimOf(competition) }) ?? false,
   };
+}
+
+/** One socket to the Worker, and what prep knows over it. */
+interface Connection {
+  key: string;
+  socket: Socket;
+  standing: Standing;
+  /** The fingerprints of the Stage copies the Worker holds, by Round id; null until it lets prep in. */
+  held: StageCopies | null;
+  /** Mutated in place: what has been sent is only for not sending it twice, and changes no screen. */
+  sync: StageCopySync;
+  /** What was last sent or about to be, by Round id, kept across `sync` resets; mutated in place. A
+   * copy still being made is sent only if it is still the latest. */
+  latest: Record<string, string | null>;
+}
+
+/** A Stage copy refused, by the Worker or by prep itself. */
+function refuse(connection: Connection, roundId: string, fingerprint: string, reason: StageCopyRefusal): Connection {
+  const refusals = { ...connection.sync.refusals, [roundId]: { fingerprint, reason } };
+  return { ...connection, sync: { ...connection.sync, refusals } };
+}
+
+/** What the socket event changes about the Stage copies the Worker holds. */
+function stageCopiesAfter(connection: Connection, event: unknown): Partial<Connection> {
+  const message = event as SocketEvent | null;
+  switch (message?.t) {
+    // Nothing is sent until the Worker lets prep in again and says what it holds.
+    case "open":
+    case "down":
+      return { held: null };
+    case "competition": {
+      // Everything is checked again against what it holds now. A Round it didn't list, or a
+      // socket it hadn't let in, may be fine now; a copy it found too big or not an image isn't.
+      const refusals = Object.fromEntries(
+        Object.entries(connection.sync.refusals).filter(([, { reason }]) => reason !== "invalid" && reason !== "host-secret"),
+      );
+      return { held: message.stageCopies ?? {}, sync: { sent: {}, refusals } };
+    }
+    case "stage-copies":
+      return { held: message.stageCopies };
+    case "refused": {
+      // A refused copy stays in `sent`, so it isn't sent again; its refusal says so.
+      const { roundId, command, reason } = message;
+      const fingerprint = roundId === undefined ? null : connection.sync.sent[roundId];
+      return command === "set-stage-copy" && fingerprint ? refuse(connection, roundId!, fingerprint, reason) : {};
+    }
+    default:
+      return {};
+  }
 }
 
 /** The value once it has stayed the same for `ms`. The first value is settled already. */

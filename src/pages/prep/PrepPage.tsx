@@ -235,6 +235,7 @@ export function PrepPage() {
             competition={competition}
             round={round}
             templateSize={typeof template === "string" ? template.length : null}
+            stageCopyProblem={connection.stageCopyProblem(round.id)}
             onChange={(change) => dispatch({ type: "change-round", id: round.id, change })}
             onExport={() => exportRounds([round])}
           />

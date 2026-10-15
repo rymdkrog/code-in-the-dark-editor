@@ -1,6 +1,7 @@
-// The Round's Reference on the Stage while voting. The Organizer drops the Competition file or
-// Round packages on the Stage or the Host console; the References stay in that browser, and
-// neither the Worker nor any phone ever gets one.
+// The Round's Reference on the Stage while voting, by the fallback path: the Organizer drops the
+// Competition file or Round packages on the Stage or the Host console, and the References stay in
+// that browser. Nothing dropped reaches the Worker or any phone. stage-copy.spec.ts covers the
+// copies prep keeps on the Worker.
 
 import { readFileSync } from "node:fs";
 import { expect, test, type Page, type WebSocket } from "@playwright/test";

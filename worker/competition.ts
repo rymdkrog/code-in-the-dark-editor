@@ -1,6 +1,6 @@
 // One Durable Object per Competition, addressed by its Join code. Plain WebSocket Hibernation
-// API, no framework. Its storage, not its memory, holds the claim, the lifecycle, the Rosters
-// and the votes, so a restart loses nothing. Who is connected is the open sockets, not storage.
+// API, no framework. Its storage, not its memory, holds the claim, the lifecycle, the Rosters,
+// the votes and the Stage copies, so a restart loses nothing. Who is connected is the open sockets, not storage.
 
 import { DurableObject } from "cloudflare:workers";
 import {
@@ -9,6 +9,7 @@ import {
   CLOSE_VERSION,
   EMPTY_ROSTER,
   isClaim,
+  isImageDataUri,
   isReaction,
   isRoundList,
   isEpochMs,
@@ -17,6 +18,7 @@ import {
   PING,
   PONG,
   REACTION_PHASES,
+  STAGE_COPY_LIMIT,
   V,
   isByHand,
   type Claim,
@@ -34,6 +36,8 @@ import {
   type RosterCommand,
   type RosterEntry,
   type ServerMessage,
+  type StageCopies,
+  type StageCopyCommand,
   type Tally,
 } from "../src/protocol/protocol.ts";
 import { isNewerRevision, isRevision } from "../src/round-package/revision.ts";
@@ -79,6 +83,7 @@ interface StoredRoster {
 
 const MAX_NAME_LENGTH = 100;
 const MAX_SEAT_LENGTH = 64;
+const MAX_FINGERPRINT_LENGTH = 64;
 
 export class Competition extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -127,6 +132,11 @@ export class Competition extends DurableObject<Env> {
         return this.react(socket, message);
       case "reset":
         return this.reset(socket);
+      case "set-stage-copy":
+      case "clear-stage-copy":
+        return this.stageCopyCommand(socket, message);
+      case "ask-stage-copy":
+        return this.giveStageCopy(socket, message.roundId);
     }
     if (isLifecycleCommand(message)) return this.command(socket, message);
   }
@@ -214,7 +224,74 @@ export class Competition extends DurableObject<Env> {
     );
     const votes = await this.ctx.storage.get<Votes>(claim.rounds.map((round) => votesKey(round.id)));
     const tallies = Object.fromEntries(claim.rounds.map((round) => [round.id, tally(votes.get(votesKey(round.id)))]));
-    return { v: V, t: "competition", competition: summary(claim), lifecycle, rosters, tallies };
+    const stageCopies = await this.stageCopies();
+    return {
+      v: V,
+      t: "competition",
+      competition: summary(claim),
+      lifecycle,
+      rosters,
+      tallies,
+      ...(Object.keys(stageCopies).length && { stageCopies }),
+    };
+  }
+
+  /** The Host sets or clears a Round's Stage copy, and every Host hears the copies now held. A
+   * copy is set only for a Round on the Round list; one can be cleared for any Round id, so a
+   * Round deleted in prep loses its copy too. */
+  private async stageCopyCommand(socket: WebSocket, command: StageCopyCommand) {
+    // A command's fields arrive unchecked.
+    const { roundId, fingerprint, image } = command as Partial<Record<"roundId" | "fingerprint" | "image", unknown>>;
+    const refuse = (reason: CommandRefusal) =>
+      send(socket, { v: V, t: "refused", command: command.t, reason, ...(typeof roundId === "string" && { roundId }) });
+    if (!isHost(socket)) return refuse("host-secret");
+    if (typeof roundId !== "string") return refuse("invalid");
+    const copies = await this.stageCopies();
+    if (command.t === "clear-stage-copy") {
+      if (!(roundId in copies)) return send(socket, { v: V, t: "stage-copies", stageCopies: copies });
+      delete copies[roundId];
+      await this.ctx.storage.transaction(async (txn) => {
+        await txn.delete(stageCopyKey(roundId));
+        await txn.put("stage-copies", copies);
+      });
+    } else {
+      if (!isImageDataUri(image)) return refuse("not-image");
+      if (image.length > STAGE_COPY_LIMIT) return refuse("too-large");
+      // A socket is a Host's only once the Competition is claimed.
+      const { rounds } = (await this.ctx.storage.get<Claim>("claim"))!;
+      if (!rounds.some((round) => round.id === roundId)) return refuse("invalid");
+      if (typeof fingerprint !== "string" || !fingerprint || fingerprint.length > MAX_FINGERPRINT_LENGTH) {
+        return refuse("invalid");
+      }
+      copies[roundId] = fingerprint;
+      await this.ctx.storage.transaction(async (txn) => {
+        await txn.put(stageCopyKey(roundId), image);
+        await txn.put("stage-copies", copies);
+      });
+      // A copy set while its Round is voting reaches the Stages following it now.
+      const { current, phase } = await this.lifecycle();
+      if (roundId === current && phase === "voting") {
+        for (const stage of this.ctx.getWebSockets("stage").filter(follows)) {
+          send(stage, { v: V, t: "stage-copy", roundId, image });
+        }
+      }
+    }
+    this.tellHosts({ v: V, t: "stage-copies", stageCopies: copies });
+  }
+
+  private async stageCopies(): Promise<StageCopies> {
+    return (await this.ctx.storage.get<StageCopies>("stage-copies")) ?? {};
+  }
+
+  /** A Round's Stage copy goes to the socket that asks only while that Round is current and
+   * voting. Otherwise, or without a copy, it gets nothing. Phones never ask, but that is the
+   * client's rule: the voting-only gate is what keeps a Reference, the Final's above all, from
+   * leaking early. */
+  private async giveStageCopy(socket: WebSocket, roundId: unknown) {
+    const { current, phase } = await this.lifecycle();
+    if (typeof roundId !== "string" || roundId !== current || phase !== "voting") return;
+    const image = await this.ctx.storage.get<string>(stageCopyKey(roundId));
+    if (image) send(socket, { v: V, t: "stage-copy", roundId, image });
   }
 
   /** A Contestant's laptop says who it is. Before the claim, or without the Contestant token, it
@@ -492,6 +569,7 @@ export class Competition extends DurableObject<Env> {
 
 const rosterKey = (roundId: string) => `roster:${roundId}`;
 const votesKey = (roundId: string) => `votes:${roundId}`;
+const stageCopyKey = (roundId: string) => `stage-copy:${roundId}`;
 
 /** Each seat's votes. */
 function tally(votes: Votes = new Map()): Tally {

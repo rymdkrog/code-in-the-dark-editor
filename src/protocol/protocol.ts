@@ -124,8 +124,30 @@ export type RosterCommand =
  * while a Round is running. */
 export type ResetCommand = { t: "reset" };
 
+/** A Round's Stage copy: its Reference scaled down to fit the Stage, which prep keeps on the
+ * Worker so a Stage on any machine can show it while voting. Each needs a socket that has shown
+ * the Host secret. */
+export type StageCopyCommand =
+  /** `fingerprint` is prep's, of the Reference the copy was made from: the Worker hands it back,
+   * so prep re-sends only copies that differ. `image` is an image data: URI. */
+  | { t: "set-stage-copy"; roundId: string; fingerprint: string; image: string }
+  | { t: "clear-stage-copy"; roundId: string };
+
+/** The longest Stage copy the Worker keeps, in characters of its data: URI. A SQLite-backed Durable
+ * Object stores at most 2 MB per key and value, and a WebSocket message may be up to 32 MiB
+ * (Cloudflare's limits, checked October 2026). Half the storage limit leaves room for the key, the
+ * fingerprint and the encoding, and prep's copies of a 1920×1080 screenshot stay well under it. */
+export const STAGE_COPY_LIMIT = 1_000_000;
+
+/** The fingerprint of each Stage copy the Worker holds, by Round id. */
+export type StageCopies = Record<string, string>;
+
+/** Whether a value is an image data: URI. */
+export const isImageDataUri = (value: unknown): value is string =>
+  typeof value === "string" && value.startsWith("data:image/");
+
 /** Every command a Host sends once it is in. */
-export type HostCommand = LifecycleCommand | RosterCommand | ResetCommand;
+export type HostCommand = LifecycleCommand | RosterCommand | ResetCommand | StageCopyCommand;
 
 export type CommandRefusal =
   /** The socket hasn't shown the Host secret. */
@@ -133,8 +155,12 @@ export type CommandRefusal =
   /** The command isn't a transition from where the Current Round is, or its fields are invalid,
    * or it is a reset while a Round is running. */
   | "transition"
-  /** A Roster command names a Round or entry that isn't there, or an empty name. */
-  | "invalid";
+  /** A Roster or Stage copy command names a Round or entry that isn't there, or an empty name. */
+  | "invalid"
+  /** A Stage copy that isn't an image data: URI. */
+  | "not-image"
+  /** A Stage copy over `STAGE_COPY_LIMIT`. */
+  | "too-large";
 
 export type HostMessage =
   /** Sent on every connect: who this Host is, and the Round list its link carries. */
@@ -193,6 +219,9 @@ export type ClientMessage =
   | ReactionMessage
   /** A phone's Vote for a Current Round's Roster entry, only while voting. The last one wins. */
   | { v: number; t: "vote"; seat: string }
+  /** Sent by the Stage only, once per voting phase: asks for the Current Round's Stage copy. The
+   * Worker answers only while that Round is current and voting, and says nothing otherwise. */
+  | { v: number; t: "ask-stage-copy"; roundId: string }
   | { v: number; t: "ping" };
 
 /** A Roster entry as the Stage and phones see it. */
@@ -263,7 +292,14 @@ export type ServerMessage =
       lifecycle: Lifecycle;
       rosters: Record<string, Roster>;
       tallies: Record<string, Tally>;
+      /** The fingerprint of each Stage copy the Worker holds, by Round id. Left out while it holds none. */
+      stageCopies?: StageCopies;
     }
+  /** A Stage copy was set or cleared: the fingerprints of every copy the Worker now holds. Sent to every Host. */
+  | { v: number; t: "stage-copies"; stageCopies: StageCopies }
+  /** The Current Round's Stage copy, to the socket that asked while it is voting, and to every
+   * following Stage when it is set while voting. Never on the public snapshot. */
+  | { v: number; t: "stage-copy"; roundId: string; image: string }
   /** A Round's Roster changed. Sent to every Host. */
   | { v: number; t: "roster"; roundId: string; roster: Roster }
   /** A Round's votes changed: cast, discarded with an entry, or cleared by a re-run. Sent to every
@@ -273,8 +309,8 @@ export type ServerMessage =
   | ({ v: number; t: "public" } & PublicSnapshot)
   /** The lifecycle changed. Sent to every Host. */
   | { v: number; t: "lifecycle"; lifecycle: Lifecycle }
-  /** A Host command changed nothing. */
-  | { v: number; t: "refused"; command: HostCommand["t"]; reason: CommandRefusal }
+  /** A Host command changed nothing. A refused Stage copy command says which Round it named. */
+  | { v: number; t: "refused"; command: HostCommand["t"]; reason: CommandRefusal; roundId?: string }
   | { v: number; t: "claim-refused"; reason: ClaimRefusal }
   /** The link's newer Round list leaves out the Current Round, `roundId`, so the Host keeps the stored one. */
   | { v: number; t: "rounds-refused"; reason: "current-round"; roundId: string }
