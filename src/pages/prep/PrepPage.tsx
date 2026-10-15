@@ -1,5 +1,4 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
-import { fillTemplate } from "../../round-package/fill-template.ts";
 import { VersionFooter } from "../shared.tsx";
 import { EDITOR_VERSION } from "../version.ts";
 import { AudiencePane } from "./AudiencePane.tsx";
@@ -14,9 +13,7 @@ import {
   mintCredentials,
   mintRoundId,
   newCompetition,
-  nextRevision,
   packageWorkerOrigin,
-  roundData,
   roundStatus,
   packageFileName,
   parseCompetitionFile,
@@ -28,6 +25,7 @@ import {
   type Revision,
   type Round,
 } from "./competition.ts";
+import { exportPackages } from "./export.ts";
 import { download, fetchTemplate } from "./files.ts";
 import { HandoutPane } from "./HandoutPane.tsx";
 import { useHostSocket } from "./host-socket.ts";
@@ -99,13 +97,9 @@ export function PrepPage() {
 
   const exportRounds = (rounds: Round[]) => {
     if (typeof template !== "string") return;
-    const now = new Date();
-    for (const round of rounds) {
-      const revision = nextRevision(competition, round, now);
-      const html = fillTemplate(template, roundData(competition, round, revision, EDITOR_VERSION));
-      download(packageFileName(competition, round), html);
-      dispatch({ type: "change-round", id: round.id, change: recordRevision(revision) });
-    }
+    const { file, revisions } = exportPackages(competition, rounds, template, EDITOR_VERSION, new Date());
+    download(file.fileName, file.content, file.type);
+    for (const { id, revision } of revisions) dispatch({ type: "change-round", id, change: recordRevision(revision) });
   };
 
   const saveFile = () => download(competitionFileName(competition), competitionFile(competition), "application/json");

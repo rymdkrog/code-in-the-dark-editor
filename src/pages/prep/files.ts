@@ -52,7 +52,8 @@ export async function fetchTemplate(): Promise<string> {
   return response.text();
 }
 
-export function download(fileName: string, content: string, type = "text/html"): void {
+/** Hands the content to the browser's downloads under the file name. */
+export function download(fileName: string, content: string | Uint8Array<ArrayBuffer> | Blob, type = "text/html"): void {
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([content], { type }));
   link.download = fileName;

@@ -187,6 +187,9 @@ export function packageFileName(competition: Competition, round: Pick<Round, "na
   return `citd-${fileSlug(competition)}-${slugify(round.name) || "round"}.html`;
 }
 
+/** `citd-<prefix>-packages.zip`: what Export N changed downloads for two or more Rounds. */
+export const packagesZipFileName = (competition: Competition) => `citd-${fileSlug(competition)}-packages.zip`;
+
 /** `#RGB` or `#RRGGBB`, the `#` optional, as `#RRGGBB`; null if it's neither. */
 export function normaliseHex(text: string): string | null {
   const digits = text.trim().replace(/^#/, "");

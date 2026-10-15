@@ -65,6 +65,10 @@ export function HandoutPane({ competition }: { competition: Competition }) {
       <p className="handout">
         Send each file however suits your venue: USB stick, AirDrop or a chat link. Tell Contestants:{" "}
         <b>open it where it lands, and don't move it.</b> Give the Final only to finalists.
+        <br />
+        Exporting two or more Rounds at once downloads one zip, for you alone. <b>Unzip it first and hand out the
+        .html files inside, never the zip:</b> a package opened from inside a zip runs from a temporary folder, and
+        can lose its autosave.
       </p>
       <div>
         <h3>Before the event</h3>

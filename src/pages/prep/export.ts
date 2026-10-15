@@ -1,0 +1,43 @@
+// Exporting Round packages: one Round downloads as its own .html, two or more as one zip, so the
+// browser doesn't hold back a run of downloads behind a "multiple downloads" prompt.
+
+import { fillTemplate } from "../../round-package/fill-template.ts";
+import {
+  nextRevision,
+  packageFileName,
+  packagesZipFileName,
+  roundData,
+  type Competition,
+  type Revision,
+  type Round,
+} from "./competition.ts";
+import { zip } from "./zip.ts";
+
+export interface ExportFile {
+  fileName: string;
+  content: string | Uint8Array<ArrayBuffer>;
+  type: string;
+}
+
+/** The one file to download for the Rounds, and the Revision each Round records for it. */
+export function exportPackages(
+  competition: Competition,
+  rounds: Round[],
+  template: string,
+  editorVersion: string,
+  now: Date,
+): { file: ExportFile; revisions: { id: string; revision: Revision }[] } {
+  const packages = rounds.map((round) => {
+    const revision = nextRevision(competition, round, now);
+    const html = fillTemplate(template, roundData(competition, round, revision, editorVersion));
+    return { id: round.id, revision, name: packageFileName(competition, round), html };
+  });
+  const revisions = packages.map(({ id, revision }) => ({ id, revision }));
+  if (packages.length === 1) {
+    const [only] = packages;
+    return { file: { fileName: only!.name, content: only!.html, type: "text/html" }, revisions };
+  }
+  const encoder = new TextEncoder();
+  const content = zip(packages.map(({ name, html }) => ({ name, data: encoder.encode(html), modified: now })));
+  return { file: { fileName: packagesZipFileName(competition), content, type: "application/zip" }, revisions };
+}

@@ -1,4 +1,6 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import { downloadFrom, exportRound, fixture, newRound, openPackage, REFERENCE } from "./prep.ts";
 
@@ -174,7 +176,7 @@ test("each sidebar Round shows its Reference, asset count and whether it needs e
   await expect(heat2).toContainText("changed since Rev 1");
 });
 
-test("Export N changed downloads every ready Round that's new or changed, unless two share a file name", async ({
+test("Export N changed downloads every ready Round that's new or changed, zipped if there are two or more, unless two share a file name", async ({
   page,
 }) => {
   await newRound(page);
@@ -184,8 +186,9 @@ test("Export N changed downloads every ready Round that's new or changed, unless
   // Heat 3 has no Reference, so it isn't ready.
   await page.getByRole("button", { name: "+ Heat" }).click();
 
-  expect(await exportChanged(page, 2)).toEqual(["citd-gothenburg-2026-heat-1.html", "citd-gothenburg-2026-heat-2.html"]);
+  expect(await exportChanged(page, 2)).toEqual(["citd-gothenburg-2026-packages.zip"]);
   await expect(page.getByRole("button", { name: "Export 0 changed" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^Heat 2/ })).toContainText("Rev 1 exported");
 
   await page.getByRole("button", { name: /^Heat 1/ }).click();
   await page.getByLabel("Add assets").setInputFiles(fixture("assets/moon.png"));
@@ -204,16 +207,34 @@ test("Export N changed downloads every ready Round that's new or changed, unless
   await expect(page.getByText(/Two Rounds would export to the same file name/)).toBeVisible();
 });
 
-/** Clicks Export N changed and returns the names of the Round packages it downloads. */
+/** Clicks Export N changed and returns the names of the files it downloads. */
 async function exportChanged(page: Page, count: number) {
   const names: string[] = [];
   const record = (download: Download) => names.push(download.suggestedFilename());
   page.on("download", record);
   await page.getByRole("button", { name: `Export ${count} changed` }).click();
-  await expect.poll(() => names.length).toBe(count);
+  await expect(page.getByRole("button", { name: "Export 0 changed" })).toBeVisible();
+  await expect.poll(() => names.length).toBeGreaterThan(0);
   page.off("download", record);
   return names.sort();
 }
+
+test("a zip of Round packages unzips to packages that open from file://", async ({ page, browser }, testInfo) => {
+  await newRound(page);
+  await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
+  await page.getByRole("button", { name: "+ Heat" }).click();
+  await page.getByLabel("Choose a Reference").setInputFiles(REFERENCE);
+
+  const zip = await downloadFrom(page.getByRole("button", { name: "Export 2 changed" }), testInfo);
+  expect(zip.fileName).toBe("citd-gothenburg-2026-packages.zip");
+  const folder = testInfo.outputPath("unzipped");
+  execFileSync("unzip", ["-q", zip.path, "-d", folder]);
+  expect(readdirSync(folder).sort()).toEqual(["citd-gothenburg-2026-heat-1.html", "citd-gothenburg-2026-heat-2.html"]);
+
+  const opened = await openPackage(browser, join(folder, "citd-gothenburg-2026-heat-2.html"));
+  expect(opened.round).toMatchObject({ roundName: "Heat 2", revision: expect.stringMatching(/^1-/) });
+  await opened.close();
+});
 
 test("a Competition file saves the whole Competition, and replacing it offers to save it first", async ({
   page,
@@ -452,6 +473,7 @@ test("the Hand out pane lists every Round's file with its status, the handout no
   );
   await expect(page.getByText(/open it where it lands, and don't move it/)).toBeVisible();
   await expect(page.getByText(/Give the Final only to finalists/)).toBeVisible();
+  await expect(page.getByText(/Unzip it first and hand out the \.html files inside, never the zip/)).toBeVisible();
   const checklist = page.getByRole("list", { name: "Organizer pre-event checklist" });
   await expect(checklist.getByRole("checkbox")).toHaveCount(11);
   await expect(checklist).toContainText("Run Reset Round.");

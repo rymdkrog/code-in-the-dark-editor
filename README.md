@@ -13,6 +13,8 @@ Early days: the first tracer builds a practice Round package you can type in. Th
 
 The prep page exports one Round package per Round. Send each file however suits your venue: USB stick, AirDrop or a chat link. Tell Contestants: **open it where it lands, and don't move it.** Give the Final only to finalists.
 
+Exporting two or more Rounds at once downloads one zip, for you alone. **Unzip it first and hand out the `.html` files inside, never the zip:** a package opened from inside a zip runs from a temporary folder, and can lose its autosave.
+
 ### Organizer pre-event checklist
 
 The prep page's Hand out & checklist pane shows the same list.
