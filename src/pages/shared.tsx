@@ -1,7 +1,7 @@
 // Small pieces the prep page and the Worker's pages share.
 
 import { useEffect, useReducer, useState } from "react";
-import type { Lifecycle, Phase, Tally } from "../protocol/protocol.ts";
+import type { ClaimRefusal, Lifecycle, Phase, Tally } from "../protocol/protocol.ts";
 import { EDITOR_VERSION } from "./version.ts";
 
 export const VersionFooter = ({ className }: { className?: string }) => (
@@ -25,6 +25,17 @@ export function CopyButton({ text, label, className }: { text: string; label: st
 
 /** A secret's first characters, enough to tell two apart, and the rest masked. */
 export const maskSecret = (secret: string) => `${secret.slice(0, 4)}${"•".repeat(16)}`;
+
+const CLAIM_REFUSALS: Record<ClaimRefusal, string> = {
+  "organizer-key": "That Organizer key is wrong.",
+  "no-organizer-key": "This Worker has no Organizer key set, so nothing can be claimed. Set the ORGANIZER_KEY secret on the Worker.",
+  claimed:
+    "This Join code is already claimed with another Host secret. Use the Host console link of the Competition that claimed it.",
+  invalid: "This link's claim is incomplete. Copy the Host console link from the prep page again.",
+};
+
+/** Why the Worker refused a claim, worded the same on the prep page and the Host console. */
+export const claimRefusal = (reason: ClaimRefusal) => CLAIM_REFUSALS[reason] ?? CLAIM_REFUSALS.invalid;
 
 /** How many phones voted: each counts once. */
 export const turnoutOf = (tally: Tally) => Object.values(tally).reduce((sum, n) => sum + n, 0);
