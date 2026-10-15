@@ -2,6 +2,7 @@
 
 import { createTestHarness } from "wrangler";
 import { JOIN_CODE_ALPHABET, type Claim, type Role } from "../../src/protocol/protocol.ts";
+import { PREBUILT_WORKER_DIR } from "./build-once.ts";
 import { openSocket, type TestSocket } from "./client.ts";
 
 export type { TestSocket };
@@ -31,7 +32,7 @@ export function newClaim(prefix: string): Claim {
 export function startWorker() {
   return createTestHarness({
     root: new URL("../..", import.meta.url).pathname,
-    workers: [{ configPath: "wrangler.toml", secrets: { ORGANIZER_KEY } }],
+    workers: [{ configPath: "wrangler.toml", prebuiltWorkerDir: PREBUILT_WORKER_DIR, secrets: { ORGANIZER_KEY } }],
   });
 }
 

@@ -5,5 +5,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts", "tests/worker/**/*.test.ts"],
+    globalSetup: ["tests/worker/build-once.ts"],
   },
 });
