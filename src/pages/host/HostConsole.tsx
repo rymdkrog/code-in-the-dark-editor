@@ -15,6 +15,7 @@ import {
 } from "../../protocol/protocol.ts";
 import { sameOriginSocket } from "../links.ts";
 import { maskSecret, VersionFooter } from "../shared.tsx";
+import { useReferenceDrop } from "../use-references.ts";
 import { ControlDesk } from "./ControlDesk.tsx";
 
 /** What the Worker has said about this Competition so far. */
@@ -57,6 +58,8 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
   const [standing, setStanding] = useState<Standing>({ kind: "unknown" });
   const [refusal, setRefusal] = useState<string | null>(null);
   const socket = useRef<Socket | null>(null);
+  // The claim names the Rounds, so References can be dropped before the claim too.
+  const dropNotice = useReferenceDrop(claim.rounds);
 
   useEffect(() => {
     const connection = connectSocket(sameOriginSocket(socketPath(claim.joinCode, "host")), {
@@ -116,7 +119,7 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
         </Notice>
       );
     case "unclaimed":
-      return <ClaimScreen claim={claim} online={online} refusal={refusal} onClaim={sendClaim} />;
+      return <ClaimScreen claim={claim} online={online} refusal={refusal} dropNotice={dropNotice} onClaim={sendClaim} />;
     case "claimed":
       return (
         <ControlDesk
@@ -125,14 +128,22 @@ function ConnectedConsole({ claim }: { claim: Claim }) {
           rosters={standing.rosters}
           tallies={standing.tallies}
           online={online}
+          dropNotice={dropNotice}
           send={sendCommand}
         />
       );
   }
 }
 
-function ClaimScreen(props: { claim: Claim; online: boolean; refusal: string | null; onClaim(key: string): void }) {
-  const { claim, online, refusal, onClaim } = props;
+interface ClaimScreenProps {
+  claim: Claim;
+  online: boolean;
+  refusal: string | null;
+  dropNotice: string | null;
+  onClaim(key: string): void;
+}
+
+function ClaimScreen({ claim, online, refusal, dropNotice, onClaim }: ClaimScreenProps) {
   const [key, setKey] = useState("");
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -179,6 +190,11 @@ function ClaimScreen(props: { claim: Claim; online: boolean; refusal: string | n
         <p className="muted small">
           Once claimed, Join code {claim.joinCode} belongs to this link's Host secret for good.
         </p>
+        {dropNotice && (
+          <p className="small" role="status">
+            {dropNotice}
+          </p>
+        )}
       </form>
       <VersionFooter className="version" />
     </div>

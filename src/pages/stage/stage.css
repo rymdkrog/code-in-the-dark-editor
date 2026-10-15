@@ -22,6 +22,8 @@ body { margin: 0; background: #000; color: #f2f2f2; font: 16px/1.45 system-ui, -
 @keyframes throb { 50% { opacity: .55; } }
 .st-offline { position: absolute; right: 22px; top: 14px; font: 600 26px system-ui; color: #ffb547; display: flex; gap: 8px; align-items: center; opacity: .8; }
 .st-offline i { width: 12px; height: 12px; border-radius: 50%; background: #ffb547; animation: throb 1s infinite; }
+/* What a dropped Competition file or Round package loaded */
+.st-loaded { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; max-width: 1500px; padding: 10px 24px; border-radius: 12px; background: #111118ee; border: 2px solid #3ee6ff66; font: 600 26px system-ui; color: #f2f2f2; }
 .st-version { position: absolute; right: 14px; bottom: 8px; font: 14px system-ui; color: #44444d; }
 
 /* Waiting for the claim */
@@ -66,6 +68,19 @@ body { margin: 0; background: #000; color: #f2f2f2; font: 16px/1.45 system-ui, -
 .st .vote-now .count { font-size: 300px; font-weight: 800; line-height: .9; }
 .st .vote-now .sub { font: 48px system-ui; color: #b7b7c2; }
 .st .vote-now .code { margin-top: 40px; font-size: 90px; font-weight: 800; letter-spacing: .14em; color: #3ee6ff; }
+
+/* Voting, with the Reference loaded in this browser: the Reference beside the turnout, QR and Join code */
+.st .vote-ref { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 520px; }
+.st .vote-ref .ref { padding: 60px 40px 60px 70px; display: flex; flex-direction: column; gap: 22px; min-height: 0; }
+.st .vote-ref .kicker { display: flex; justify-content: space-between; }
+.st .vote-ref .kicker span { color: #8a8a96; letter-spacing: .1em; }
+.st .vote-ref img { flex: 1; min-height: 0; width: 100%; object-fit: contain; object-position: left top; border-radius: 12px; outline: 3px solid #ffffff22; }
+.st .vote-ref aside { background: #111118; border-left: 4px solid #ff3e8a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; text-align: center; padding: 40px; }
+.st .vote-ref .t { font: 800 50px system-ui; }
+.st .vote-ref .count { font-size: 230px; font-weight: 800; line-height: .9; }
+.st .vote-ref .sub { font: 40px system-ui; color: #b7b7c2; }
+.st .vote-ref .sub.url { font-size: 28px; }
+.st .vote-ref .code { font-size: 70px; font-weight: 800; letter-spacing: .14em; color: #3ee6ff; }
 
 /* Results: tiles grown to their counts, arriving last to first, the leaders crowned */
 .st .tiles.results { margin: 0; }

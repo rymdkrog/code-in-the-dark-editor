@@ -61,6 +61,7 @@ button { cursor: pointer; }
 .rail-item.on { background: #ff3e8a1c; border-color: #ff3e8a66; }
 .rail-item:disabled { cursor: not-allowed; }
 .rail-item small { color: var(--muted); font-size: 12px; }
+.refs p { margin: 0 0 6px; padding: 0 6px; }
 main { padding: 18px 22px 100px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
 .head { display: flex; align-items: center; gap: 10px; }
 .head h1 { margin: 0; font-size: 26px; }

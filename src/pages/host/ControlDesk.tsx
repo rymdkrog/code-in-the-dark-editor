@@ -29,6 +29,7 @@ import {
   voteCount,
   votesWord,
 } from "../shared.tsx";
+import { useStoredRoundIds } from "../use-references.ts";
 import { rosterStatus, RosterTable } from "./RosterTable.tsx";
 
 /** The phases a Round can't be switched away from without asking, and what switching costs. */
@@ -54,11 +55,13 @@ interface Props {
   /** Every Round's live tally, by Round id: the Host's alone. */
   tallies: Record<string, Tally>;
   online: boolean;
+  /** What the last Competition file or Round packages dropped on the console loaded, for a few seconds. */
+  dropNotice: string | null;
   /** Sends now, or drops the command and returns false. */
   send(command: HostCommand): boolean;
 }
 
-export function ControlDesk({ competition, lifecycle, rosters, tallies, online, send }: Props) {
+export function ControlDesk({ competition, lifecycle, rosters, tallies, online, dropNotice, send }: Props) {
   const [confirm, confirmation] = useConfirm(online, lifecycle);
   const roundName = (id: string | null) =>
     competition.rounds.find((round) => round.id === id)?.name ?? "the welcome screen";
@@ -174,6 +177,7 @@ export function ControlDesk({ competition, lifecycle, rosters, tallies, online, 
               </button>
             );
           })}
+          <References rounds={competition.rounds} dropNotice={dropNotice} />
           <VersionFooter className="version" />
         </nav>
         <main>
@@ -217,6 +221,30 @@ export function ControlDesk({ competition, lifecycle, rosters, tallies, online, 
       </div>
       {confirmation}
     </div>
+  );
+}
+
+/** The Rounds whose Reference a Stage in this browser shows while voting. The Organizer drops the
+ * Competition file or Round packages anywhere on the console to load them. */
+function References({ rounds, dropNotice }: { rounds: CompetitionSummary["rounds"]; dropNotice: string | null }) {
+  const stored = useStoredRoundIds();
+  const names = rounds.filter((round) => stored.includes(round.id)).map((round) => round.name);
+  return (
+    <section className="refs" aria-labelledby="refs-h">
+      <div className="rail-h" id="refs-h">
+        References
+      </div>
+      <p>{names.length ? names.join(", ") : "none"}</p>
+      <p className="muted small">
+        A Stage in this browser shows them while voting. Drop the Competition file or Round packages anywhere on
+        this page to load them. They stay in this browser.
+      </p>
+      {dropNotice && (
+        <p className="small" role="status">
+          {dropNotice}
+        </p>
+      )}
+    </section>
   );
 }
 

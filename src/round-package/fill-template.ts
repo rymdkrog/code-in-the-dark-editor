@@ -3,7 +3,8 @@
 
 import type { RoundData } from "./round-data.ts";
 
-const SLOT = /<script type="application\/json" id="round">[\s\S]*?<\/script>/g;
+const SLOT_SOURCE = String.raw`<script type="application\/json" id="round">([\s\S]*?)<\/script>`;
+const SLOT = new RegExp(SLOT_SOURCE, "g");
 const HEAD = /<head(\s[^>]*)?>/;
 const BOM = "﻿";
 
@@ -27,6 +28,9 @@ export function fillTemplate(template: string, round: RoundData): string {
   // so the byte order mark is what keeps the package UTF-8 from file://.
   return BOM + (html.startsWith(BOM) ? html.slice(BOM.length) : html);
 }
+
+/** What a Round package's data slot holds, still as JSON, or undefined if the HTML has no slot. */
+export const roundSlotJson = (html: string): string | undefined => html.match(new RegExp(SLOT_SOURCE))?.[1];
 
 function contentSecurityPolicy(round: RoundData): string {
   const directives = [

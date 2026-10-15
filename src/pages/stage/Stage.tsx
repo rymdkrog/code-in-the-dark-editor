@@ -16,6 +16,7 @@ import {
 } from "../../protocol/protocol.ts";
 import { joinLink, sameOriginSocket } from "../links.ts";
 import { entryVotes, RoundClock, VersionFooter, votesWord } from "../shared.tsx";
+import { useReferenceDrop, useStoredReference } from "../use-references.ts";
 import { Qr } from "./Qr.tsx";
 
 const WIDTH = 1920;
@@ -76,10 +77,15 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
     return () => connection.close();
   }, [joinCode]);
 
+  const claimed = standing.kind === "claimed" ? standing : null;
+  const dropNotice = useReferenceDrop(claimed?.competition.rounds ?? []);
+  // Only read while voting: it's the one screen that shows it.
+  const reference = useStoredReference(claimed?.lifecycle.phase === "voting" ? claimed.lifecycle.current : null);
+
   return (
     <Frame>
-      {standing.kind === "claimed" ? (
-        <Screen {...standing} />
+      {claimed ? (
+        <Screen {...claimed} reference={reference} />
       ) : (
         <div className="st-wait">
           {/* The Worker learns the name only from the claim; until then it comes from the link. */}
@@ -87,6 +93,11 @@ function FollowingStage({ joinCode, name }: { joinCode: string; name: string }) 
           <div className="sub">
             {standing.kind === "unknown" ? "Connecting to the Worker…" : "Waiting for the Host to open the Competition…"}
           </div>
+        </div>
+      )}
+      {dropNotice && (
+        <div className="st-loaded" role="status">
+          {dropNotice}
         </div>
       )}
       {online === false && (
@@ -132,7 +143,9 @@ const KICKERS: Record<Exclude<Phase, "running">, string> = {
   results: "Results",
 };
 
-function Screen({ competition, lifecycle, roster, turnout, tally, arriving }: PublicSnapshot & { arriving: boolean }) {
+type ScreenProps = PublicSnapshot & { arriving: boolean; reference: string | null };
+
+function Screen({ competition, lifecycle, roster, turnout, tally, arriving, reference }: ScreenProps) {
   const join = { url: joinLink(location.origin, competition.joinCode), joinCode: competition.joinCode };
   const round = competition.rounds.find(({ id }) => id === lifecycle.current);
   if (!lifecycle.phase || !round) {
@@ -175,7 +188,13 @@ function Screen({ competition, lifecycle, roster, turnout, tally, arriving }: Pu
       </>
     );
   }
-  if (lifecycle.phase === "voting") return <VoteNow roundName={round.name} turnout={turnout} {...join} />;
+  if (lifecycle.phase === "voting") {
+    return reference ? (
+      <VoteBesideReference roundName={round.name} reference={reference} turnout={turnout} {...join} />
+    ) : (
+      <VoteNow roundName={round.name} turnout={turnout} {...join} />
+    );
+  }
   const clock = lifecycle.phase === "upcoming" || lifecycle.phase === "timesup";
   return (
     <>
@@ -206,8 +225,41 @@ function Screen({ competition, lifecycle, roster, turnout, tally, arriving }: Pu
   );
 }
 
-/** While voting: the turnout, QR and Join code, and no per-Contestant counts. */
-function VoteNow({ roundName, turnout, url, joinCode }: { roundName: string; turnout: number; url: string; joinCode: string }) {
+interface VoteProps {
+  roundName: string;
+  turnout: number;
+  url: string;
+  joinCode: string;
+}
+
+/** While voting, with the Round's Reference loaded in this browser: the Reference fills most of
+ * the screen, so the Audience compares the Reveals to it, beside the turnout, QR and Join code. */
+function VoteBesideReference({ roundName, reference, turnout, url, joinCode }: VoteProps & { reference: string }) {
+  return (
+    <div className="vote-ref">
+      <div className="ref">
+        <div className="kicker">
+          Reference · {roundName}
+          <span>which Reveal came closest?</span>
+        </div>
+        <img src={reference} alt={`Reference for ${roundName}`} />
+      </div>
+      <aside>
+        <div className="t">Vote now</div>
+        <div className="count" aria-label="Turnout">
+          {turnout}
+        </div>
+        <div className="sub">{votesWord(turnout)} so far</div>
+        <Qr text={url} size={300} />
+        <div className="code">{joinCode}</div>
+        <div className="sub url">{displayUrl(url)}</div>
+      </aside>
+    </div>
+  );
+}
+
+/** While voting, with no Reference loaded: the turnout, QR and Join code, and no per-Contestant counts. */
+function VoteNow({ roundName, turnout, url, joinCode }: VoteProps) {
   return (
     <div className="vote-now">
       <Qr text={url} size={440} />
