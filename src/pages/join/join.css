@@ -49,11 +49,14 @@ button { cursor: pointer; touch-action: manipulation; }
 .tagline { margin: 0; padding: 10px 16px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
 
 .roster { list-style: none; margin: 0; padding: 6px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
-.roster li { background: var(--panel); border-radius: 16px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.roster li { background: var(--panel); border-radius: 16px; padding: 10px 10px 10px 14px; display: flex; align-items: center; gap: 10px; }
 .roster li.off { opacity: .45; }
-.who { font-weight: 800; font-size: 17px; overflow-wrap: anywhere; }
-.reacts { display: flex; gap: 6px; }
-.react { width: 48px; height: 48px; border: 0; border-radius: 12px; background: #ffffff10; font-size: 24px; line-height: 1; padding: 0; user-select: none; -webkit-user-select: none; }
+.who { flex: 0 1 30%; min-width: 0; font-weight: 800; font-size: 17px; overflow-wrap: anywhere; }
+/* The four emoji share the rest of the row, as big as fits: big thumbs, a dark room. */
+.reacts { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.react { height: 60px; border: 0; border-radius: 14px; background: #ffffff10; font-size: 30px; line-height: 1; padding: 0; user-select: none; -webkit-user-select: none; }
+.roster.few li { padding-top: 12px; padding-bottom: 12px; }
+.roster.few .react { height: 76px; font-size: 36px; }
 .react:active:not(:disabled) { transform: scale(.92); background: #ffffff22; }
 .react:disabled { opacity: .35; cursor: not-allowed; }
 

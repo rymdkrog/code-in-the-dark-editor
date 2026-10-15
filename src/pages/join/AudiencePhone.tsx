@@ -239,7 +239,8 @@ function InRound({ competition, lifecycle, roster, live, react }: PublicSnapshot
       {roster.length === 0 ? (
         <p className="muted small tagline">The Contestants show up here as they join.</p>
       ) : (
-        <ul className="roster" aria-label="Roster">
+        // Most Heats have four Contestants: their emoji get the extra room. Eight still fit a screen.
+        <ul className={`roster ${roster.length <= 4 ? "few" : ""}`} aria-label="Roster">
           {roster.map((entry) => (
             <RosterRow key={entry.id} entry={entry} reacting={reacting} react={react} />
           ))}
