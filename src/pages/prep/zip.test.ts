@@ -1,15 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { crc32, zip } from "./zip.ts";
 
 const encode = (text: string) => new TextEncoder().encode(text);
 
+const folder = mkdtempSync(join(tmpdir(), "citd-zip-"));
+let zips = 0;
+afterAll(() => rmSync(folder, { recursive: true, force: true }));
+
 /** Writes the zip to a temporary file, for the system's own unzip to read. */
 function zipFile(bytes: Uint8Array): string {
-  const path = join(mkdtempSync(join(tmpdir(), "citd-zip-")), "packages.zip");
+  const path = join(folder, `${++zips}.zip`);
   writeFileSync(path, bytes);
   return path;
 }

@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { fillTemplate } from "../../round-package/fill-template.ts";
 import { addRound, newCompetition, packageFileName, roundData, type Competition } from "./competition.ts";
 import { exportPackages } from "./export.ts";
@@ -21,9 +21,13 @@ function competitionWith(heats: number): Competition {
   return { ...competition, rounds: competition.rounds.map((round) => ({ ...round, reference })) };
 }
 
+const folder = mkdtempSync(join(tmpdir(), "citd-export-"));
+let zips = 0;
+afterAll(() => rmSync(folder, { recursive: true, force: true }));
+
 /** Each entry of the zip, read back by the system's own unzip. */
 function unzipped(bytes: Uint8Array): Record<string, string> {
-  const path = join(mkdtempSync(join(tmpdir(), "citd-export-")), "packages.zip");
+  const path = join(folder, `${++zips}.zip`);
   writeFileSync(path, bytes);
   const names = execFileSync("zipinfo", ["-1", path], { encoding: "utf8" }).trim().split("\n");
   return Object.fromEntries(names.map((name) => [name, execFileSync("unzip", ["-p", path, name], { encoding: "utf8" })]));
