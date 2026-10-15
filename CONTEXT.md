@@ -49,6 +49,10 @@ _Avoid_: State, status, stage
 The Contestants taking part in a Round, as the Host and Audience see them. Contestants still looking at an earlier Round's work are not on the current Round's Roster.
 _Avoid_: Lineup, participants
 
+**Reset**:
+What the Host does after a rehearsal: every Round's Roster and Votes are cleared and the Stage goes back to the welcome screen. The Join code and the Round packages stay the same. It is not a rehearsal mode.
+_Avoid_: Wipe, clear-all, rehearsal mode
+
 **Reference**:
 The screenshot of the target page Contestants must recreate.
 _Avoid_: Target, page.png, design

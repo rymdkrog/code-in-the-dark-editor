@@ -19,6 +19,7 @@ import {
 import { stageLink } from "../links.ts";
 import {
   CopyButton,
+  entryCount,
   entryVotes,
   formatClock,
   PHASE_LABELS,
@@ -70,6 +71,7 @@ export function ControlDesk({ competition, lifecycle, rosters, tallies, online, 
   const current = lifecycle.current === null ? null : roundName(lifecycle.current);
   const tally = (lifecycle.current && tallies[lifecycle.current]) || {};
   const counting = lifecycle.phase === "voting" || lifecycle.phase === "results";
+  const running = lifecycle.phase === "running";
 
   const makeCurrent = async (roundId: string | null) => {
     if (roundId === lifecycle.current) return;
@@ -124,6 +126,23 @@ export function ControlDesk({ competition, lifecycle, rosters, tallies, online, 
     if (await confirm({ title: `Remove ${entry.name} from ${roundName(roundId)}?`, body, ok: "Remove" })) {
       send({ t: "remove-entry", roundId, seat: entry.seat });
     }
+  };
+
+  /** After a rehearsal. Every Round is cleared at once, so the Host is told what goes from each. */
+  const reset = async () => {
+    const cleared = competition.rounds
+      .map((round) => {
+        const entries = rosters[round.id]?.entries.length ?? 0;
+        const votes = turnoutOf(tallies[round.id] ?? {});
+        return { name: round.name, entries, votes };
+      })
+      .filter(({ entries, votes }) => entries || votes)
+      .map(({ name, entries, votes }) => `${name}: ${entryCount(entries)}, ${voteCount(votes)}.`);
+    const body = [
+      cleared.length ? `Clears every Round's Roster and votes. ${cleared.join(" ")}` : "Every Roster is empty and nobody has voted.",
+      "The Stage goes back to the welcome screen. The Join code and Round packages stay the same, and laptops still open come back on their Roster.",
+    ].join(" ");
+    if (await confirm({ title: "Reset after the rehearsal?", body, ok: "Reset" })) send({ t: "reset" });
   };
 
   return (
@@ -186,6 +205,17 @@ export function ControlDesk({ competition, lifecycle, rosters, tallies, online, 
             );
           })}
           <References rounds={competition.rounds} dropNotice={dropNotice} />
+          <section className="reset" aria-labelledby="reset-h">
+            <div className="rail-h" id="reset-h">
+              Rehearsal
+            </div>
+            <button className="btn sm danger" disabled={!online || running} onClick={reset}>
+              Reset after rehearsal…
+            </button>
+            <p className="muted small">
+              {running ? "Not while a Round is running." : "Clears every Roster and vote. The Join code stays."}
+            </p>
+          </section>
           <VersionFooter className="version" />
         </nav>
         <main>

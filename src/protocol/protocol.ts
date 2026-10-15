@@ -115,16 +115,23 @@ export type LifecycleCommand =
 export type RosterCommand =
   /** Adds a Contestant whose laptop never connects: votable, but it gets no Reactions. */
   | { t: "add-by-hand"; roundId: string; name: string }
-  /** Removes an entry. If its laptop is still connected, it stays hidden for the rest of the Round. */
+  /** Removes an entry. If its laptop is still connected, it stays hidden for the rest of the Round,
+   * until a reset. */
   | { t: "remove-entry"; roundId: string; seat: string };
 
+/** Clears every Round's Roster, hidden seats and votes after a rehearsal, and goes back to the
+ * welcome screen with the same duration. The claim and Round list stay as they are. Refused
+ * while a Round is running. */
+export type ResetCommand = { t: "reset" };
+
 /** Every command a Host sends once it is in. */
-export type HostCommand = LifecycleCommand | RosterCommand;
+export type HostCommand = LifecycleCommand | RosterCommand | ResetCommand;
 
 export type CommandRefusal =
   /** The socket hasn't shown the Host secret. */
   | "host-secret"
-  /** The command isn't a transition from where the Current Round is, or its fields are invalid. */
+  /** The command isn't a transition from where the Current Round is, or its fields are invalid,
+   * or it is a reset while a Round is running. */
   | "transition"
   /** A Roster command names a Round or entry that isn't there, or an empty name. */
   | "invalid";
@@ -213,7 +220,7 @@ export interface PublicSnapshot {
 }
 
 /** One laptop on a Round's Roster, or a Contestant the Host added by hand. It stays listed for
- * the rest of the Round once it appears. */
+ * the rest of the Round once it appears, until a reset. */
 export interface RosterEntry {
   seat: string;
   name: string;

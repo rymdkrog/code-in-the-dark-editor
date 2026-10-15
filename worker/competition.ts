@@ -73,7 +73,7 @@ type Votes = Map<string, string>;
 interface StoredRoster {
   entries: StoredEntry[];
   newest: string | null;
-  /** Seats the Host removed while their laptop was connected: hidden for the rest of the Round. */
+  /** Seats the Host removed while their laptop was connected: hidden for the rest of the Round, or until a reset. */
   hidden?: string[];
 }
 
@@ -125,6 +125,8 @@ export class Competition extends DurableObject<Env> {
         return this.rosterCommand(socket, message);
       case "react":
         return this.react(socket, message);
+      case "reset":
+        return this.reset(socket);
     }
     if (isLifecycleCommand(message)) return this.command(socket, message);
   }
@@ -397,6 +399,34 @@ export class Competition extends DurableObject<Env> {
     // Votes belong to one run of a Round.
     if (command.t === "start") await this.clearVotes(next.current!);
     await this.change(next);
+  }
+
+  /** After a rehearsal: every Round's Roster, hidden seats and votes go, and the Stage goes back
+   * to the welcome screen with the same duration. The claim stays as it is. Storage is cleared
+   * before anyone hears the new lifecycle, so no snapshot shows the old Roster on the welcome
+   * screen. Laptops still connected are closed, and their Enhancement reconnects and sends its
+   * presence again, so they are back on their Roster, a hidden one too. */
+  private async reset(socket: WebSocket) {
+    if (!isHost(socket)) return send(socket, { v: V, t: "refused", command: "reset", reason: "host-secret" });
+    const lifecycle = await this.lifecycle();
+    if (lifecycle.phase === "running") return send(socket, { v: V, t: "refused", command: "reset", reason: "transition" });
+    // A socket is a Host's only once the Competition is claimed.
+    const claim = (await this.ctx.storage.get<Claim>("claim"))!;
+    await this.ctx.storage.transaction(async (txn) => {
+      await txn.delete(claim.rounds.flatMap((round) => [rosterKey(round.id), votesKey(round.id)]));
+      await txn.put("lifecycle", { ...WELCOME, durationMs: lifecycle.durationMs } satisfies Lifecycle);
+      await txn.deleteAlarm();
+    });
+    this.tellHosts(await this.hostSnapshot(claim));
+    await this.tellFollowers(claim);
+    for (const laptop of this.ctx.getWebSockets("contestant")) {
+      // Off the Roster already, so its closing tells nobody anything.
+      const attachment = laptop.deserializeAttachment() as Attachment;
+      delete attachment.place;
+      laptop.serializeAttachment(attachment);
+      // An ordinary close: the Enhancement reconnects after anything but a protocol mismatch.
+      laptop.close(1012, "The Competition was reset");
+    }
   }
 
   private async clearVotes(roundId: string) {

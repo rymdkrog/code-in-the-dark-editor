@@ -44,6 +44,9 @@ export const votesWord = (n: number) => (n === 1 ? "vote" : "votes");
 /** "1 vote", "3 votes". */
 export const voteCount = (n: number) => `${n} ${votesWord(n)}`;
 
+/** "1 Roster entry", "3 Roster entries". */
+export const entryCount = (n: number) => `${n} Roster ${n === 1 ? "entry" : "entries"}`;
+
 /** An entry's votes in a tally, whether it leads (the most votes, if anyone voted), and its
  * votes as a share of the leaders'. */
 export function entryVotes(tally: Tally, seat: string) {
