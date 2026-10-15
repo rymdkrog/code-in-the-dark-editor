@@ -7,3 +7,7 @@ export const NAME_CHANGED = "citd:name-changed";
 export const SEAT = "citd:seat";
 /** No `detail`. The Round is open in another tab, so this one never starts and doesn't connect. */
 export const TWO_TAB_BLOCKED = "citd:two-tab-blocked";
+/** No `detail`. The Contestant's code is now shown, rendered, over the editor. */
+export const REVEAL_STARTED = "citd:reveal-started";
+/** No `detail`. The Reveal is over: the page is going away, and comes back as the editor. */
+export const REVEAL_ENDED = "citd:reveal-ended";

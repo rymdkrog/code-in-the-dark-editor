@@ -9,9 +9,11 @@ import {
   CLOSE_VERSION,
   EMPTY_ROSTER,
   isClaim,
+  isReaction,
   parseSocketPath,
   PING,
   PONG,
+  REACTION_PHASES,
   V,
   isByHand,
   type Claim,
@@ -22,6 +24,8 @@ import {
   type Lifecycle,
   type LifecycleCommand,
   type Presence,
+  type PublicEntry,
+  type ReactionMessage,
   type Role,
   type Roster,
   type RosterCommand,
@@ -105,6 +109,8 @@ export class Competition extends DurableObject<Env> {
       case "add-by-hand":
       case "remove-entry":
         return this.rosterCommand(socket, message);
+      case "react":
+        return this.react(socket, message);
     }
     if (isLifecycleCommand(message)) return this.command(socket, message);
   }
@@ -253,10 +259,30 @@ export class Competition extends DurableObject<Env> {
     if (place) await this.rosterChanged(place.roundId, socket);
   }
 
+  /** A phone's Reaction goes to its seat's laptop, and only while the Current Round allows
+   * Reactions and the seat is on its Roster and connected. Otherwise it is lost: never stored,
+   * never queued. */
+  private async react(socket: WebSocket, message: ReactionMessage) {
+    const { seat, e } = message;
+    if (!this.ctx.getTags(socket).includes("phone") || typeof seat !== "string" || !isReaction(e)) return;
+    const { current, phase } = await this.lifecycle();
+    if (!current || !REACTION_PHASES.includes(phase!)) return;
+    const roster = await this.ctx.storage.get<StoredRoster>(rosterKey(current));
+    if (!roster?.entries.some((entry) => entry.seat === seat)) return;
+    const reaction = JSON.stringify({ v: V, t: "react", seat, e } satisfies ServerMessage);
+    for (const laptop of this.ctx.getWebSockets("contestant")) {
+      const { place } = laptop.deserializeAttachment() as Attachment;
+      if (place?.roundId === current && place.seat === seat) laptop.send(reaction);
+    }
+  }
+
   /** Tells every Host a Round's Roster as it is now, leaving out a socket that is closing. */
   private async rosterChanged(roundId: string, closing?: WebSocket) {
     const stored = await this.storedRoster(roundId);
     this.tellHosts({ v: V, t: "roster", roundId, roster: this.withOnline(roundId, stored, closing) });
+    // Phones dim an entry whose laptop has gone: it can't be reacted to while offline.
+    const claim = await this.ctx.storage.get<Claim>("claim");
+    if (claim && roundId === (await this.lifecycle()).current) await this.tellFollowers(claim, closing);
   }
 
   /** A stored Roster with each entry's connection: online while one of its laptop's sockets is open. */
@@ -311,18 +337,30 @@ export class Competition extends DurableObject<Env> {
     }
   }
 
-  private async tellFollowers(claim: Claim) {
+  /** Tells every Stage and phone the public snapshot, leaving out a laptop socket that is closing. */
+  private async tellFollowers(claim: Claim, closing?: WebSocket) {
     const followers = this.ctx.getWebSockets().filter(follows);
     if (!followers.length) return;
-    const snapshot = await this.publicSnapshot(claim);
+    const snapshot = await this.publicSnapshot(claim, closing);
     for (const socket of followers) send(socket, snapshot);
   }
 
-  /** The Current Round's Roster is names only: who is connected and on which Revision is the Host's. */
-  private async publicSnapshot(claim: Claim): Promise<ServerMessage> {
+  /** The Current Round's Roster is names, and whether each laptop is connected so phones know
+   * whom they can react to. Revisions are the Host's. */
+  private async publicSnapshot(claim: Claim, closing?: WebSocket): Promise<ServerMessage> {
     const lifecycle = await this.lifecycle();
-    const stored = lifecycle.current ? await this.ctx.storage.get<StoredRoster>(rosterKey(lifecycle.current)) : undefined;
-    const roster = (stored ?? EMPTY_ROSTER).entries.map((entry) => ({ id: entry.seat, name: entry.name }));
+    const { current } = lifecycle;
+    const stored = current ? await this.ctx.storage.get<StoredRoster>(rosterKey(current)) : undefined;
+    const roster = current
+      ? this.withOnline(current, stored, closing).entries.map(
+          (entry): PublicEntry => ({
+            id: entry.seat,
+            name: entry.name,
+            online: entry.online,
+            ...(isByHand(entry) && { handAdded: true }),
+          }),
+        )
+      : [];
     return { v: V, t: "public", competition: summary(claim), lifecycle, roster };
   }
 }

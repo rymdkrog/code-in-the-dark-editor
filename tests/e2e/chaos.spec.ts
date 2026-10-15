@@ -11,6 +11,7 @@ import { SEAT } from "../../src/round-package/events.ts";
 import { socketOrigin } from "../../src/round-package/fill-template.ts";
 import { closedPort, presences, startFakeWorker, type Behaviour, type FakeWorker } from "./fake-worker.ts";
 import { gateNetwork } from "./no-network-gate.ts";
+import { flood, laptopPeer, mostInAFrame, recordReactions } from "./reactions.ts";
 import { editorText, makePackage, openPackage } from "./package.ts";
 
 // About 6 s of typing at the delay below, with ACE's auto-closing and indent in play.
@@ -24,12 +25,13 @@ const KEY_DELAY_MS = 50;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** What the Contestant can see: the page title, and which of the page's parts show. */
+/** What the Contestant can see: the page title, and which of the page's parts show. Reactions
+ * are left out: they are the one change the Audience may make. */
 const surface = (page: Page) =>
   page.evaluate(() => ({
     title: document.title,
     parts: [...document.body.children]
-      .filter((element) => !(element instanceof HTMLScriptElement))
+      .filter((element) => !(element instanceof HTMLScriptElement) && !element.matches("canvas.reactions"))
       .map((element) => `${element.tagName.toLowerCase()}.${element.className}: ${element.checkVisibility()}`),
     dialogs: document.querySelectorAll("dialog[open]").length,
   }));
@@ -67,6 +69,8 @@ interface Session {
   /** Everything the page wrote to the console, other than the browser reporting the Worker's socket failing. */
   console: string[];
   busy: Awaited<ReturnType<typeof busyness>>;
+  /** The most Reactions drawn in one frame. */
+  mostReactions: number;
 }
 
 /**
@@ -88,6 +92,7 @@ async function session(
   const check = await gateNetwork(context, { workerUrl, online: true });
   if (initScript) await context.addInitScript(...initScript);
   const page = await context.newPage();
+  await recordReactions(page);
   const output: string[] = [];
   const workerSocket = workerUrl && socketOrigin(workerUrl);
   page.on("console", (message) => {
@@ -100,7 +105,13 @@ async function session(
   await openPackage(page, file);
   await Promise.all([page.keyboard.type(SCRIPT, { delay: KEY_DELAY_MS }), during?.()]);
 
-  const result = { text: await editorText(page), surface: await surface(page), console: output, busy: await busyness(page, browserName) };
+  const result = {
+    text: await editorText(page),
+    surface: await surface(page),
+    console: output,
+    busy: await busyness(page, browserName),
+    mostReactions: await mostInAFrame(page),
+  };
   check();
   await context.close();
   return result;
@@ -225,6 +236,26 @@ test("a 1 MB message", async ({ browser, browserName }, testInfo) => {
   });
 
   await expectUnnoticed(await session(browser, browserName, testInfo, { workerUrl: url }), browser, browserName, testInfo);
+});
+
+test("a flood of 1,000 Reactions a second for 10 s: only Reactions show, at most 200 at once", async ({
+  browser,
+  browserName,
+}, testInfo) => {
+  const { behaviour, peer } = laptopPeer();
+  const { url } = await fake(behaviour);
+
+  const chaos = await session(browser, browserName, testInfo, {
+    workerUrl: url,
+    during: async () => {
+      await flood(await peer, { perSecond: 1000, seconds: 10 });
+      // The last ones float away within 2.4 s; idle is measured after that.
+      await sleep(2500);
+    },
+  });
+
+  await expectUnnoticed(chaos, browser, browserName, testInfo);
+  expect(chaos.mostReactions).toBe(200);
 });
 
 test("the server restarts mid-Round, and the package comes back with its presence", async ({

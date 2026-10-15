@@ -1,50 +1,9 @@
 // The live Roster: Round packages with the local Worker's URL, opened from file://, appear on
 // the Host console run by the real Worker under `wrangler dev`.
 
-import { expect, test, type Browser, type Page, type TestInfo } from "@playwright/test";
-import { pathToFileURL } from "node:url";
-import { hostConsoleLink } from "../../src/pages/links.ts";
-import { mintCredentials } from "../../src/pages/prep/competition.ts";
-import type { Claim } from "../../src/protocol/protocol.ts";
-import { gateNetwork } from "./no-network-gate.ts";
-import { enterName, makePackage, PRACTICE, roundIn } from "./package.ts";
-import { WORKER_ORGANIZER_KEY, WORKER_URL } from "./worker.ts";
-
-const HEAT = roundIn(PRACTICE).roundId;
-
-/** A Competition of the practice Round and a Final, with fresh credentials. */
-const newClaim = (): Claim => ({
-  competitionName: "Gothenburg 2026",
-  ...mintCredentials(),
-  rounds: [
-    { id: HEAT, name: "Heat 1" },
-    { id: "final00000", name: "Final" },
-  ],
-});
-
-/** The practice Round as the Competition's Heat 1, exported as Revision `n`. */
-const heatPackage = (testInfo: TestInfo, claim: Claim, n: number) =>
-  makePackage(testInfo.outputPath(`heat-rev-${n}.html`), {
-    revision: `${n}-20261012140${n}`,
-    audience: { workerUrl: WORKER_URL, joinCode: claim.joinCode, contestantToken: claim.contestantToken },
-  });
-
-/** Opens a Round package on a laptop of its own, online to the local Worker only. */
-async function laptop(browser: Browser, file: string, name: string) {
-  const context = await browser.newContext();
-  const check = await gateNetwork(context, { workerUrl: WORKER_URL, online: true });
-  const page = await context.newPage();
-  await page.goto(pathToFileURL(file).href);
-  await enterName(page, name);
-  return { page, close: async () => (check(), await context.close()) };
-}
-
-async function claimConsole(host: Page, claim: Claim) {
-  await host.goto(hostConsoleLink(WORKER_URL, claim));
-  await host.getByLabel("Organizer key").fill(WORKER_ORGANIZER_KEY);
-  await host.getByRole("button", { name: "Claim" }).click();
-  await expect(host.getByRole("banner")).toContainText("live");
-}
+import { expect, test, type Page } from "@playwright/test";
+import { claimConsole, heatPackage, laptop, newClaim } from "./host.ts";
+import { enterName } from "./package.ts";
 
 const rosterOf = (host: Page) => host.getByRole("table", { name: /^Roster/ });
 const row = (host: Page, name: string) => rosterOf(host).getByRole("row").filter({ hasText: name });

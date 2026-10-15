@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, type Page } from "@playwright/test";
-import { editorText, nextFrame, openPackage, setEditorText, test } from "./package.ts";
+import { editorText, nextFrame, openPackage, resultFrame, reveal, revealButton, setEditorText, test } from "./package.ts";
 
 // References the practice Round's one asset every way a Contestant might, plus a script and
 // an external font and stylesheets, which must neither run nor load.
@@ -18,18 +18,7 @@ const recordRevealEvents = (page: Page) =>
 const revealEvents = (page: Page) =>
   page.evaluate(() => (window as unknown as { revealEvents: string[] }).revealEvents);
 
-const revealButton = (page: Page) => page.getByRole("button", { name: "Reveal", exact: true });
 const result = (page: Page) => page.frameLocator("iframe.result");
-const resultFrame = (page: Page) => page.locator("iframe.result");
-
-async function reveal(page: Page, confirmation = "yes") {
-  await revealButton(page).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("textbox").fill(confirmation);
-  await page.keyboard.press("Enter");
-  await expect(dialog).toBeHidden();
-  await expect(resultFrame(page)).toBeVisible();
-}
 
 test("the Reveal renders the code with the Round's assets, and no JavaScript or external resources", async ({
   page,

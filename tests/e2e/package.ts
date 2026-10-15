@@ -70,6 +70,19 @@ export async function restoreFrom(page: Page, file: string) {
   await (await chooser).setFiles(file);
 }
 
+export const revealButton = (page: Page) => page.getByRole("button", { name: "Reveal", exact: true });
+export const resultFrame = (page: Page) => page.locator("iframe.result");
+
+/** Reveals the code, confirming with `confirmation`. */
+export async function reveal(page: Page, confirmation = "yes") {
+  await revealButton(page).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill(confirmation);
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(resultFrame(page)).toBeVisible();
+}
+
 export const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 

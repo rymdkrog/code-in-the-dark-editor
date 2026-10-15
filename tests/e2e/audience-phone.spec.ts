@@ -1,8 +1,8 @@
 // The Audience phone page on the real Worker under `wrangler dev`: joining with the Join code,
 // and following the Competition from Round to Round.
 
-import { expect, test, type Page } from "@playwright/test";
-import { JOIN_CODE_ALPHABET } from "../../src/protocol/protocol.ts";
+import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
+import { JOIN_CODE_ALPHABET, REACTIONS, V, type PublicSnapshot } from "../../src/protocol/protocol.ts";
 import { claimedConsole, desk, prepareCompetition } from "./host.ts";
 import { WORKER_URL } from "./worker.ts";
 
@@ -182,4 +182,109 @@ test("a phone waiting on a code says when it's reconnecting", async ({ page }) =
   await expect(page.getByRole("status")).toHaveText("Reconnecting…");
   await expect(page.getByRole("heading", { name: `Waiting for ${code} to open…` })).toBeVisible();
   await expect(page.getByRole("button", { name: "Change code" })).toBeEnabled();
+});
+
+/** A phone on a Worker the test plays: it answers `follow` with `snapshot`, and records what the
+ * phone sends. */
+async function scriptedPhone(page: Page, snapshot: PublicSnapshot) {
+  const sent: unknown[] = [];
+  let server: WebSocketRoute | undefined;
+  let reachable = true;
+  const say = (next: PublicSnapshot) => server?.send(JSON.stringify({ v: V, t: "public", ...next }));
+  await page.routeWebSocket(/\/socket\//, (socket) => {
+    if (!reachable) return void socket.close();
+    server = socket;
+    socket.onMessage((text) => {
+      const message = JSON.parse(String(text)) as { t: string };
+      if (message.t === "follow") say(snapshot);
+      else sent.push(message);
+    });
+  });
+  // Every buzz the phone asks for.
+  await page.addInitScript(() => {
+    const buzzes: unknown[] = [];
+    (window as unknown as { buzzes: unknown[] }).buzzes = buzzes;
+    Object.defineProperty(navigator, "vibrate", { value: (pattern: unknown) => (buzzes.push(pattern), true) });
+  });
+  await page.goto(`${WORKER_URL}/join/?c=K7XQ2N`);
+  /** Drops the phone, and turns its reconnects away from then on. */
+  const drop = async () => {
+    reachable = false;
+    await server?.close();
+  };
+  return { sent, say, drop, buzzes: () => page.evaluate(() => (window as unknown as { buzzes: unknown[] }).buzzes) };
+}
+
+const SNAPSHOT: PublicSnapshot = {
+  competition: { name: "Gothenburg 2026", joinCode: "K7XQ2N", rounds: [{ id: "heat1aaaaa", name: "Heat 1" }] },
+  lifecycle: { current: "heat1aaaaa", phase: "running", durationMs: 900_000, endsAt: Date.now() + 600_000 },
+  roster: [
+    { id: "seat-ada", name: "Ada", online: true },
+    { id: "seat-bo", name: "Bo", online: false },
+    { id: "hand-cleo", name: "Cleo", online: false, handAdded: true },
+  ],
+};
+
+const rosterRow = (phone: Page, name: string) => phone.getByRole("listitem").filter({ hasText: name });
+const emojiButtons = (phone: Page, name: string) => rosterRow(phone, name).getByRole("button");
+
+test("every Roster entry is a row of its own four emoji; offline entries are dimmed, hand-added ones vote only", async ({
+  page,
+}) => {
+  await scriptedPhone(page, SNAPSHOT);
+
+  await expect(emojiButtons(page, "Ada")).toHaveText([...REACTIONS]);
+  for (const button of await emojiButtons(page, "Ada").all()) await expect(button).toBeEnabled();
+  await expect(emojiButtons(page, "Ada").first()).toHaveAccessibleName("React 🔥 to Ada");
+
+  await expect(emojiButtons(page, "Bo")).toHaveCount(4);
+  for (const button of await emojiButtons(page, "Bo").all()) await expect(button).toBeDisabled();
+  const opacity = (name: string) => rosterRow(page, name).evaluate((row) => Number(getComputedStyle(row).opacity));
+  expect(await opacity("Bo")).toBeLessThan(await opacity("Ada"));
+
+  await expect(rosterRow(page, "Cleo")).toContainText("no laptop — vote only");
+  await expect(emojiButtons(page, "Cleo")).toHaveCount(0);
+});
+
+test("a tap sends one Reaction, bursts at the tap point at once, and buzzes", async ({ page }) => {
+  const { sent, buzzes } = await scriptedPhone(page, SNAPSHOT);
+  const fire = emojiButtons(page, "Ada").first();
+  const box = (await fire.boundingBox())!;
+
+  await fire.click();
+  await fire.click();
+
+  const burst = page.locator(".burst").first();
+  await expect(burst).toBeAttached();
+  await expect(burst).toHaveText("🔥");
+  const at = (await burst.boundingBox())!;
+  expect(Math.abs(at.x + at.width / 2 - (box.x + box.width / 2))).toBeLessThan(box.width);
+  await expect.poll(() => sent).toEqual([
+    { v: V, t: "react", seat: "seat-ada", e: "🔥" },
+    { v: V, t: "react", seat: "seat-ada", e: "🔥" },
+  ]);
+  expect(await buzzes()).toHaveLength(2);
+  // Bursts clear themselves.
+  await expect(page.locator(".burst")).toHaveCount(0);
+});
+
+test("the emoji work while up next, running and at time's up, and not in voting or results", async ({ page }) => {
+  const { say } = await scriptedPhone(page, SNAPSHOT);
+  const fire = emojiButtons(page, "Ada").first();
+
+  for (const phase of ["upcoming", "timesup", "voting", "results", "running"] as const) {
+    say({ ...SNAPSHOT, lifecycle: { ...SNAPSHOT.lifecycle, phase } });
+    if (phase === "voting" || phase === "results") await expect(fire).toBeDisabled();
+    else await expect(fire).toBeEnabled();
+  }
+});
+
+test("while the phone is reconnecting, the emoji wait for the snapshot", async ({ page }) => {
+  const { drop } = await scriptedPhone(page, SNAPSHOT);
+  await expect(emojiButtons(page, "Ada").first()).toBeEnabled();
+
+  await drop();
+
+  await expect(page.getByRole("status")).toHaveText("Reconnecting…");
+  for (const button of await emojiButtons(page, "Ada").all()) await expect(button).toBeDisabled();
 });

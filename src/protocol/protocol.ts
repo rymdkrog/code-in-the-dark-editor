@@ -143,6 +143,24 @@ export interface Presence {
   revision: string;
 }
 
+/** The four emoji an Audience member can send a Contestant. The set is fixed by the software. */
+export const REACTIONS = ["🔥", "👏", "😂", "😱"] as const;
+export type Reaction = (typeof REACTIONS)[number];
+export const isReaction = (e: unknown): e is Reaction => REACTIONS.includes(e as Reaction);
+
+/** The phases in which phones may react: up next, running and time's up. */
+export const REACTION_PHASES: readonly Phase[] = ["upcoming", "running", "timesup"];
+
+/** One tap on a Roster entry's emoji, with no coalescing. The Worker relays it as is to that
+ * seat's laptop, and nowhere else. */
+export interface ReactionMessage {
+  v: number;
+  t: "react";
+  /** The Roster entry's id: its laptop's seat. */
+  seat: string;
+  e: Reaction;
+}
+
 /** The Enhancement's only message. Sent on every connect and whenever the name changes. */
 export type ContestantMessage = { v: number; t: "presence"; token: string } & Presence;
 
@@ -152,12 +170,18 @@ export type ClientMessage =
   | ContestantMessage
   /** Sent by the Stage and Audience phones on every connect: they follow the Current Round, read-only. */
   | { v: number; t: "follow" }
+  /** Sent by Audience phones only. */
+  | ReactionMessage
   | { v: number; t: "ping" };
 
 /** A Roster entry as the Stage and phones see it. */
 export interface PublicEntry {
   id: string;
   name: string;
+  /** Whether its laptop is connected now, so it can be reacted to. */
+  online: boolean;
+  /** Set on an entry the Host added by hand: it has no laptop, so it gets no Reactions. */
+  handAdded?: true;
 }
 
 /** What the Stage and phones see of a claimed Competition: no secrets, and only the Current
@@ -199,6 +223,8 @@ export const isStale = (entry: RosterEntry, roster: Roster) =>
 
 export type ServerMessage =
   | { v: number; t: "pong" }
+  /** A Reaction for this laptop: the only message a Contestant's laptop acts on. */
+  | ReactionMessage
   /** The Competition hasn't been claimed yet. */
   | { v: number; t: "unclaimed" }
   /** The Host is in: the snapshot of the Competition, sent on every connect. Every Round's

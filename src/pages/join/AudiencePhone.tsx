@@ -2,16 +2,20 @@
 // Competition from Round to Round. It follows like the Stage does, so the Worker sends it the
 // public snapshot: no secrets, and only the Current Round's Roster.
 
-import { useEffect, useState, type FormEvent } from "react";
-import { connectSocket } from "../../enhancement/socket.ts";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { connectSocket, type Socket } from "../../enhancement/socket.ts";
 import {
   base64url,
   isJoinCode,
   JOIN_CODE_ALPHABET,
   JOIN_CODE_LENGTH,
+  REACTION_PHASES,
+  REACTIONS,
   socketPath,
   V,
+  type PublicEntry,
   type PublicSnapshot,
+  type Reaction,
   type ServerMessage,
 } from "../../protocol/protocol.ts";
 import { sameOriginSocket } from "../links.ts";
@@ -114,9 +118,10 @@ function Joined({ joinCode, onChangeCode }: { joinCode: string; onChangeCode(): 
   const [admission, setAdmission] = useState<Admission>({ kind: "joining" });
   // True from a snapshot until the connection drops: only then is what's shown current.
   const [live, setLive] = useState(false);
+  const socket = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const connection = connectSocket(sameOriginSocket(socketPath(joinCode, "phone")), {
+    const connection = (socket.current = connectSocket(sameOriginSocket(socketPath(joinCode, "phone")), {
       open: () => connection.send({ v: V, t: "follow" }),
       down: () => setLive(false),
       message(data) {
@@ -133,9 +138,12 @@ function Joined({ joinCode, onChangeCode }: { joinCode: string; onChangeCode(): 
           setAdmission({ kind: "admitted", competition, lifecycle, roster });
         }
       },
-    });
+    }));
     return () => connection.close();
   }, [joinCode]);
+
+  /** One tap, one Reaction: no coalescing, and nothing waits for it. */
+  const react = (seat: string, emoji: Reaction) => socket.current?.send({ v: V, t: "react", seat, e: emoji });
 
   return (
     <>
@@ -144,13 +152,19 @@ function Joined({ joinCode, onChangeCode }: { joinCode: string; onChangeCode(): 
           Reconnecting…
         </div>
       )}
-      <AdmissionScreen admission={admission} joinCode={joinCode} onChangeCode={onChangeCode} />
+      <AdmissionScreen admission={admission} joinCode={joinCode} live={live} react={react} onChangeCode={onChangeCode} />
     </>
   );
 }
 
-function AdmissionScreen(props: { admission: Admission; joinCode: string; onChangeCode(): void }) {
-  const { admission, joinCode, onChangeCode } = props;
+interface Reacting {
+  /** Whether what's shown is current: Reactions wait for the snapshot after a reconnect. */
+  live: boolean;
+  react(seat: string, emoji: Reaction): void;
+}
+
+function AdmissionScreen(props: { admission: Admission; joinCode: string; onChangeCode(): void } & Reacting) {
+  const { admission, joinCode, onChangeCode, live, react } = props;
   switch (admission.kind) {
     case "joining":
       return (
@@ -164,7 +178,11 @@ function AdmissionScreen(props: { admission: Admission; joinCode: string; onChan
     case "waiting":
       return <Waiting joinCode={joinCode} onChangeCode={onChangeCode} />;
     case "admitted":
-      return admission.lifecycle.phase ? <InRound {...admission} /> : <Welcome {...admission} />;
+      return admission.lifecycle.phase ? (
+        <InRound {...admission} live={live} react={react} />
+      ) : (
+        <Welcome {...admission} />
+      );
   }
 }
 
@@ -206,8 +224,9 @@ const PHASE_LINES = {
   results: "Voting closed · Eyes on the Stage",
 };
 
-function InRound({ competition, lifecycle, roster }: PublicSnapshot) {
+function InRound({ competition, lifecycle, roster, live, react }: PublicSnapshot & Reacting) {
   const phase = lifecycle.phase!;
+  const reacting = live && REACTION_PHASES.includes(phase);
   const round = competition.rounds.find((candidate) => candidate.id === lifecycle.current);
   return (
     <>
@@ -222,10 +241,65 @@ function InRound({ competition, lifecycle, roster }: PublicSnapshot) {
       ) : (
         <ul className="roster" aria-label="Roster">
           {roster.map((entry) => (
-            <li key={entry.id}>{entry.name}</li>
+            <RosterRow key={entry.id} entry={entry} reacting={reacting} react={react} />
           ))}
         </ul>
       )}
     </>
   );
+}
+
+/** A Roster entry and its own four emoji. Offline entries are dimmed and can't be reacted to; an
+ * entry added by hand has no laptop to react on. */
+function RosterRow(props: { entry: PublicEntry; reacting: boolean; react: Reacting["react"] }) {
+  const { entry, reacting, react } = props;
+  const tap = (emoji: Reaction) => (event: MouseEvent<HTMLButtonElement>) => {
+    // Felt and seen at once, before anything goes over the network.
+    burst(emoji, event);
+    try {
+      navigator.vibrate?.(15);
+    } catch {
+      // No buzz on this phone.
+    }
+    react(entry.id, emoji);
+  };
+  return (
+    <li className={!entry.handAdded && !entry.online ? "off" : ""}>
+      <span className="who">{entry.name}</span>
+      {entry.handAdded ? (
+        <span className="muted small">no laptop — vote only</span>
+      ) : (
+        <span className="reacts">
+          {REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              className="react"
+              aria-label={`React ${emoji} to ${entry.name}`}
+              disabled={!reacting || !entry.online}
+              onClick={tap(emoji)}
+            >
+              {emoji}
+            </button>
+          ))}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/** The emoji pops up from where it was tapped, then clears itself. */
+function burst(emoji: Reaction, event: MouseEvent<HTMLButtonElement>) {
+  const button = event.currentTarget.getBoundingClientRect();
+  // A click from the keyboard has no point: it bursts from the button's middle.
+  const pointed = event.detail > 0;
+  const element = document.createElement("span");
+  element.className = "burst";
+  element.textContent = emoji;
+  element.setAttribute("aria-hidden", "true");
+  element.style.left = `${pointed ? event.clientX : button.left + button.width / 2}px`;
+  element.style.top = `${pointed ? event.clientY : button.top + button.height / 2}px`;
+  const clear = () => element.remove();
+  element.addEventListener("animationend", clear);
+  setTimeout(clear, 1000);
+  document.body.append(element);
 }

@@ -49,7 +49,21 @@ button { cursor: pointer; touch-action: manipulation; }
 .tagline { margin: 0; padding: 10px 16px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
 
 .roster { list-style: none; margin: 0; padding: 6px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
-.roster li { background: var(--panel); border-radius: 16px; padding: 12px; font-weight: 800; font-size: 17px; }
+.roster li { background: var(--panel); border-radius: 16px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.roster li.off { opacity: .45; }
+.who { font-weight: 800; font-size: 17px; overflow-wrap: anywhere; }
+.reacts { display: flex; gap: 6px; }
+.react { width: 48px; height: 48px; border: 0; border-radius: 12px; background: #ffffff10; font-size: 24px; line-height: 1; padding: 0; user-select: none; -webkit-user-select: none; }
+.react:active:not(:disabled) { transform: scale(.92); background: #ffffff22; }
+.react:disabled { opacity: .35; cursor: not-allowed; }
+
+/* A tapped emoji pops up from the tap point. */
+.burst { position: fixed; z-index: 2; pointer-events: none; font-size: 32px; line-height: 1; transform: translate(-50%, -50%); animation: burst .6s ease-out forwards; }
+@keyframes burst {
+  0% { transform: translate(-50%, -50%) scale(.6); opacity: 1; }
+  100% { transform: translate(-50%, -140%) scale(1.5); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .burst { animation-duration: .3s; } }
 
 .reconnecting { position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 1; background: #3a2a10; color: #ffcf7a; border: 1px solid #ffb54766; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 

@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { enterPowerMode, mostSquaresInAFrame, recordEffects, recording } from "./effects.ts";
-import { editorText, openPackage, test } from "./package.ts";
+import { startFakeWorker } from "./fake-worker.ts";
+import { gateNetwork } from "./no-network-gate.ts";
+import { editorText, makePackage, openPackage, test } from "./package.ts";
+import { flood, laptopPeer, mostInAFrame, recordReactions } from "./reactions.ts";
 
 // The input-lag budget (spec: Testing Decisions). A regression guard run on release tags; the
 // real proof is the manual run on a low-end laptop.
@@ -100,37 +103,56 @@ function p95(keystrokes: Keystroke[]) {
   return times[Math.ceil(times.length * 0.95) - 1]!;
 }
 
-test("Power Mode at the particle cap, shaking, adds no input lag", async ({ browser, browserName }, testInfo) => {
+test("Power Mode at the particle cap, shaking, under a Reaction flood, adds no input lag", async ({
+  browser,
+  browserName,
+}, testInfo) => {
   test.setTimeout(TRIALS * 60_000);
   const timed = browserName !== "webkit";
   const trials = [];
 
   for (let trial = 1; trial <= TRIALS; trial++) {
+    const { behaviour, peer } = laptopPeer();
+    const worker = await startFakeWorker(behaviour);
     const context = await browser.newContext();
+    const check = await gateNetwork(context, { workerUrl: worker.url, online: true });
     const page = await context.newPage();
     // Particles slowed down 4×, so they stay at the 500 cap while the Contestant types.
     await recordEffects(page, { slowMotion: 4 });
+    await recordReactions(page);
     await measureInputLag(page);
-    await openPackage(page);
+    await openPackage(
+      page,
+      makePackage(testInfo.outputPath("package.html"), {
+        audience: { workerUrl: worker.url, joinCode: "K7XQ2N", contestantToken: "lag-token" },
+      }),
+    );
+    const laptop = await peer;
     await enterPowerMode(page);
-    // Measured from here: Power Mode on, with the particles piling up.
+    // Measured from here: Power Mode on, with the particles piling up, and the Audience flooding
+    // the overlay at 1,000 Reactions a second.
     await startMeasuring(page);
 
+    const flooding = flood(laptop, { perSecond: 1000, seconds: 10 });
     await page.keyboard.type(TEXT, { delay: 20 });
     await page.waitForTimeout(500);
 
     // First, as reading the rest is itself a long task.
     const { keystrokes, longTasks } = await measurements(page);
-    // The worst case was reached: particles at the cap and the editor shaking.
+    // The worst case was reached: particles at the cap, the editor shaking, and the overlay full.
     expect(await mostSquaresInAFrame(page)).toBe(500);
     expect((await recording(page)).styleChanges.length).toBeGreaterThan(0);
+    expect(await mostInAFrame(page)).toBe(200);
     // No dropped keystrokes, and each one measured.
     expect(await editorText(page)).toBe("a".repeat(200) + TEXT);
     expect(keystrokes).toHaveLength(TEXT.length);
 
     const result = { trial, p95KeystrokeProcessing: p95(keystrokes), longestTask: Math.max(0, ...longTasks) };
     trials.push(result);
+    await flooding;
+    check();
     await context.close();
+    await worker.stop();
     if (result.p95KeystrokeProcessing <= BUDGET.p95KeystrokeProcessing && result.longestTask <= BUDGET.longestTask) {
       break;
     }

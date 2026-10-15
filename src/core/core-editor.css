@@ -461,9 +461,9 @@ dialog button + button {
   background: white;
 }
 
-/* During the Reveal only the result and the name badge show, and any dialog opened from it.
-   Reactions, when they come, join this list. */
-body.revealing > :not(.result, .name-badge, dialog) {
+/* During the Reveal only the result and the name badge show, any dialog opened from it, and
+   the Enhancement's Reactions, at full strength. */
+body.revealing > :not(.result, .name-badge, dialog, .reactions) {
   display: none;
 }
 

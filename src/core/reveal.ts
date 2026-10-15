@@ -1,11 +1,8 @@
 import type { Ace } from "ace-builds";
+import { REVEAL_ENDED, REVEAL_STARTED } from "../round-package/events.ts";
 import type { RoundData } from "../round-package/round-data.ts";
 import { rewriteAssets } from "./reveal-assets.ts";
 import { typedConfirm } from "./typed-confirm.ts";
-
-// Published on `window` whether or not anyone listens. The Enhancement only ever listens.
-const REVEAL_STARTED = "citd:reveal-started";
-const REVEAL_ENDED = "citd:reveal-ended";
 
 /**
  * The Reveal button, the dialog that asks for "yes", and the frame the result renders in. The
