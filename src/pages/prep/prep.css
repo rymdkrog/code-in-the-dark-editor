@@ -86,6 +86,7 @@ main { min-width: 0; padding-bottom: 40px; }
 .status.needs-export { background: #ffb02e22; color: var(--warn); }
 .status.exported { background: #7ee08722; color: #7ee087; }
 .topbar-problems { padding: 10px 24px 0; }
+.topbar-note { margin: 0; padding: 10px 24px 0; font-size: 13px; }
 
 .work { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); gap: 24px; padding: 20px 24px; align-items: start; }
 /* minmax(0, …) so a full-size Reference scrolls inside its pane rather than widening it. */

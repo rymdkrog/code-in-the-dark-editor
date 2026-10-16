@@ -6,6 +6,7 @@ import {
   nextRevision,
   packageFileName,
   packagesZipFileName,
+  packageWorkerOrigin,
   roundData,
   type Competition,
   type Revision,
@@ -17,6 +18,15 @@ export interface ExportFile {
   fileName: string;
   content: string | Uint8Array<ArrayBuffer>;
   type: string;
+}
+
+/**
+ * Why Round packages would export offline, or null when they connect to the Worker. Each package
+ * bakes this in, so fixing it later means exporting and handing out every package again.
+ */
+export function offlineExport(competition: Competition): "audience off" | "invalid worker url" | null {
+  if (packageWorkerOrigin(competition)) return null;
+  return competition.audience.enabled ? "invalid worker url" : "audience off";
 }
 
 /** The one file to download for the Rounds, and the Revision each Round records for it. */

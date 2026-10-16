@@ -25,11 +25,11 @@ import {
   type Revision,
   type Round,
 } from "./competition.ts";
-import { exportPackages, tryPackage } from "./export.ts";
+import { exportPackages, offlineExport, tryPackage } from "./export.ts";
 import { download, fetchTemplate, openInNewTab } from "./files.ts";
 import { HandoutPane } from "./HandoutPane.tsx";
 import { useHostSocket } from "./host-socket.ts";
-import { RoundView, StatusLabel } from "./RoundView.tsx";
+import { OfflineNote, RoundView, StatusLabel } from "./RoundView.tsx";
 import { loadCompetition, saveCompetition } from "./store.ts";
 
 /** What the main area shows: a Competition-wide pane or one Round. */
@@ -85,6 +85,10 @@ export function PrepPage() {
   // A Competition the Organizer is opening or starting, while they're offered to save this one first.
   const [replacement, setReplacement] = useState<Competition | null>(null);
   const [openProblem, setOpenProblem] = useState<string | null>(null);
+  // Rounds the Organizer asked to export while the Worker URL is invalid, until they say what to do.
+  const [pendingExport, setPendingExport] = useState<Round[] | null>(null);
+  const [focusWorkerUrl, setFocusWorkerUrl] = useState(false);
+  const offline = offlineExport(competition);
 
   const add = (kind: Round["kind"]) => {
     const id = mintRoundId();
@@ -95,12 +99,15 @@ export function PrepPage() {
   const changed = changedRounds(competition);
   const clashing = competition.rounds.some((candidate) => fileNameClash(competition, candidate));
 
-  const exportRounds = (rounds: Round[]) => {
+  const exportNow = (rounds: Round[]) => {
     if (typeof template !== "string") return;
     const { file, revisions } = exportPackages(competition, rounds, template, EDITOR_VERSION, new Date());
     download(file.fileName, file.content, file.type);
     for (const { id, revision } of revisions) dispatch({ type: "change-round", id, change: recordRevision(revision) });
   };
+  // Every package bakes in its Worker URL, so an invalid one is asked about before it's handed out.
+  const exportRounds = (rounds: Round[]) =>
+    offline === "invalid worker url" ? setPendingExport(rounds) : exportNow(rounds);
 
   // Nothing is recorded: the Round's Revisions and status stay as they were.
   const tryRound = (round: Round) => {
@@ -195,6 +202,7 @@ export function PrepPage() {
         >
           Export {changed.length} changed
         </button>
+        {offline === "audience off" && <OfflineNote className="sidebar-note" />}
         {clashing && (
           <p className="problem sidebar-note" role="alert">
             Two Rounds would export to the same file name. Rename one of them to export.
@@ -252,6 +260,8 @@ export function PrepPage() {
           <AudiencePane
             competition={competition}
             connection={connection}
+            focusWorkerUrl={focusWorkerUrl}
+            onWorkerUrlFocused={() => setFocusWorkerUrl(false)}
             onChange={(change) => dispatch({ type: "change-audience", change })}
             onMint={() => dispatch({ type: "change-audience", change: mintCredentials() })}
           />
@@ -303,6 +313,20 @@ export function PrepPage() {
           onCancel={() => setReplacement(null)}
         />
       )}
+      {pendingExport && (
+        <OfflineExportDialog
+          onExportAnyway={() => {
+            setPendingExport(null);
+            exportNow(pendingExport);
+          }}
+          onFixWorkerUrl={() => {
+            setPendingExport(null);
+            setPane({ kind: "audience" });
+            setFocusWorkerUrl(true);
+          }}
+          onCancel={() => setPendingExport(null)}
+        />
+      )}
     </div>
   );
 }
@@ -341,6 +365,46 @@ function ReplaceDialog({ name, onSaveFirst, onReplace, onCancel }: ReplaceDialog
           Save Competition file first
         </button>
         <button onClick={onReplace}>Replace without saving</button>
+        <button onClick={onCancel}>Cancel</button>
+      </div>
+    </dialog>
+  );
+}
+
+interface OfflineExportDialogProps {
+  onExportAnyway(): void;
+  onFixWorkerUrl(): void;
+  onCancel(): void;
+}
+
+/** Asks before exporting Round packages that would be offline because the Worker URL isn't valid. */
+function OfflineExportDialog({ onExportAnyway, onFixWorkerUrl, onCancel }: OfflineExportDialogProps) {
+  const heading = useId();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!dialog.current?.open) dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="replace"
+      aria-labelledby={heading}
+      onCancel={(event) => {
+        event.preventDefault();
+        onCancel();
+      }}
+    >
+      <h2 id={heading}>Export offline Round packages?</h2>
+      <p>
+        The Audience layer is on, but the Worker URL isn't valid, so these Round packages will be offline: no
+        Reactions, voting or Stage timer for these laptops. Fixing it later means exporting and handing out every
+        package again.
+      </p>
+      <div className="actions">
+        <button className="go" onClick={onFixWorkerUrl}>
+          Fix the Worker URL
+        </button>
+        <button onClick={onExportAnyway}>Export anyway</button>
         <button onClick={onCancel}>Cancel</button>
       </div>
     </dialog>

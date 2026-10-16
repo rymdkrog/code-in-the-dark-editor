@@ -21,7 +21,9 @@ test("a package exports offline while the Audience layer is off or its Worker UR
   await turnOnAudience(page, "citd.example.workers.dev/oops");
   await expect(page.getByText("Not a valid Worker URL: packages export offline.")).toBeVisible();
   await page.getByRole("button", { name: /^Heat 1/ }).click();
-  const invalid = await openPackage(browser, (await exportRound(page, testInfo)).path);
+  await page.getByRole("button", { name: /^(Re-)?[Ee]xport$/ }).click();
+  const anyway = page.getByRole("dialog").getByRole("button", { name: "Export anyway" });
+  const invalid = await openPackage(browser, (await downloadFrom(anyway, testInfo)).path);
 
   expect(invalid.round.audience).toBeUndefined();
   await invalid.close();

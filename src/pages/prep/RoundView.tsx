@@ -18,6 +18,7 @@ import {
   type Round,
   type RoundStatus,
 } from "./competition.ts";
+import { offlineExport } from "./export.ts";
 import { fileType, pixelColour, readAsset } from "./files.ts";
 
 interface Props {
@@ -132,6 +133,7 @@ export function RoundView({ competition, round, templateSize, stageCopyProblem, 
           {round.revisions.length ? "Re-export" : "Export"}
         </button>
       </div>
+      {offlineExport(competition) === "audience off" && <OfflineNote className="topbar-note" />}
       <Notices
         className="problem topbar-problems"
         notices={[...(status.kind === "problem" ? status.problems : []), ...(stageCopyProblem ? [stageCopyProblem] : [])]}
@@ -339,6 +341,14 @@ const STATUS_CLASSES: Record<RoundStatus["kind"], string> = {
   changed: "needs-export",
   exported: "exported",
 };
+
+/** Beside an Export button while the Audience layer is off. */
+export const OfflineNote = ({ className }: { className: string }) => (
+  <p className={`dim ${className}`}>
+    Packages export offline. Turning on the Audience layer later means re-exporting and handing out every Round package
+    again.
+  </p>
+);
 
 /** Whether a Round has a problem, still needs exporting, or is up to date. */
 export function StatusLabel({ status }: { status: RoundStatus }) {

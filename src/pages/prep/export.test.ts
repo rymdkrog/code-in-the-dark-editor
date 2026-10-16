@@ -14,7 +14,7 @@ import {
   updateAudience,
   type Competition,
 } from "./competition.ts";
-import { exportPackages, tryPackage } from "./export.ts";
+import { exportPackages, offlineExport, tryPackage } from "./export.ts";
 
 const TEMPLATE = `<!doctype html>
 <html><head><title>Code in the Dark</title></head>
@@ -128,5 +128,26 @@ describe("tryPackage", () => {
 
     expect(competition).toEqual(before);
     expect(roundStatus(competition, round)).toEqual({ kind: "not exported" });
+  });
+});
+
+describe("offlineExport", () => {
+  const withAudience = (enabled: boolean, workerUrl: string): Competition => {
+    const competition = competitionWith(1);
+    return { ...competition, audience: { ...competition.audience, enabled, workerUrl } };
+  };
+
+  it("says packages export offline while the Audience layer is off, whatever the Worker URL", () => {
+    expect(offlineExport(withAudience(false, ""))).toBe("audience off");
+    expect(offlineExport(withAudience(false, "https://citd.example.workers.dev"))).toBe("audience off");
+  });
+
+  it("says the Worker URL is invalid while the Audience layer is on without a valid one", () => {
+    expect(offlineExport(withAudience(true, ""))).toBe("invalid worker url");
+    expect(offlineExport(withAudience(true, "citd.example.workers.dev"))).toBe("invalid worker url");
+  });
+
+  it("says nothing while packages connect to the Worker", () => {
+    expect(offlineExport(withAudience(true, "https://citd.example.workers.dev"))).toBeNull();
   });
 });

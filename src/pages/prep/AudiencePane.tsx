@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { hostConsoleLink, stageLink } from "../links.ts";
 import { claimRefusal, CopyButton, maskSecret } from "../shared.tsx";
 import { claimOf, workerOrigin, type Audience, type Competition } from "./competition.ts";
@@ -10,12 +10,21 @@ const rememberedWorkerUrl = workerUrlMemory();
 interface Props {
   competition: Competition;
   connection: HostConnection;
+  /** Focus the Worker URL field, then say so. */
+  focusWorkerUrl: boolean;
+  onWorkerUrlFocused(): void;
   onChange(change: Partial<Audience>): void;
   onMint(): void;
 }
 
-export function AudiencePane({ competition, connection, onChange, onMint }: Props) {
+export function AudiencePane({ competition, connection, focusWorkerUrl, onWorkerUrlFocused, onChange, onMint }: Props) {
   const { audience } = competition;
+  const workerUrlInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!focusWorkerUrl) return;
+    workerUrlInput.current?.focus();
+    onWorkerUrlFocused();
+  }, [focusWorkerUrl]);
   const origin = workerOrigin(audience.workerUrl);
   const claimed = connection.standing.kind === "claimed";
   const stage = origin ? stageLink(origin, audience.joinCode, competition.name) : "";
@@ -38,6 +47,7 @@ export function AudiencePane({ competition, connection, onChange, onMint }: Prop
             Worker URL
             <span className="dim"> — your deployed Worker, or the closed instance</span>
             <input
+              ref={workerUrlInput}
               value={audience.workerUrl}
               placeholder="https://citd.example.workers.dev"
               onChange={(event) => onChange({ workerUrl: event.target.value })}
