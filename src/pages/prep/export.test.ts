@@ -3,9 +3,18 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { fillTemplate } from "../../round-package/fill-template.ts";
-import { addRound, newCompetition, packageFileName, roundData, type Competition } from "./competition.ts";
-import { exportPackages } from "./export.ts";
+import { fillTemplate, roundSlotJson } from "../../round-package/fill-template.ts";
+import {
+  addRound,
+  newCompetition,
+  nextRevision,
+  packageFileName,
+  roundData,
+  roundStatus,
+  updateAudience,
+  type Competition,
+} from "./competition.ts";
+import { exportPackages, tryPackage } from "./export.ts";
 
 const TEMPLATE = `<!doctype html>
 <html><head><title>Code in the Dark</title></head>
@@ -81,5 +90,43 @@ describe("exportPackages", () => {
     const { file } = exportPackages(competition, competition.rounds, TEMPLATE, VERSION, NOW);
     expect(packageFileName(competition, competition.rounds[0]!)).toBe("citd-gbg-26-heat-1.html");
     expect(file.fileName).toBe("citd-gbg-26-packages.zip");
+  });
+});
+
+describe("tryPackage", () => {
+  const withAudience = (competition: Competition) =>
+    updateAudience(competition, { enabled: true, workerUrl: "https://citd.example.workers.dev" });
+
+  it("is the package an export would give, stamped with the next Revision", () => {
+    const competition = competitionWith(1);
+    const round = competition.rounds[0]!;
+
+    expect(tryPackage(competition, round, TEMPLATE, VERSION, NOW)).toBe(
+      fillTemplate(TEMPLATE, roundData(competition, round, nextRevision(competition, round, NOW), VERSION)),
+    );
+  });
+
+  it("carries no Audience connection, so it opens no socket, even with the Audience layer on", () => {
+    const competition = withAudience(competitionWith(1));
+    const round = competition.rounds[0]!;
+    expect(roundData(competition, round, { stamp: "" }, VERSION).audience).toBeDefined();
+
+    const html = tryPackage(competition, round, TEMPLATE, VERSION, NOW);
+
+    const data = JSON.parse(roundSlotJson(html)!);
+    expect(data).not.toHaveProperty("audience");
+    expect(data.revision).toBe("1-202610151403");
+    expect(html).not.toContain("connect-src");
+  });
+
+  it("records nothing: the Round's Revisions and status stay as they were", () => {
+    const competition = withAudience(competitionWith(1));
+    const round = competition.rounds[0]!;
+    const before = structuredClone(competition);
+
+    tryPackage(competition, round, TEMPLATE, VERSION, NOW);
+
+    expect(competition).toEqual(before);
+    expect(roundStatus(competition, round)).toEqual({ kind: "not exported" });
   });
 });

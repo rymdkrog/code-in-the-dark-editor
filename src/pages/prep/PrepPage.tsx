@@ -25,8 +25,8 @@ import {
   type Revision,
   type Round,
 } from "./competition.ts";
-import { exportPackages } from "./export.ts";
-import { download, fetchTemplate } from "./files.ts";
+import { exportPackages, tryPackage } from "./export.ts";
+import { download, fetchTemplate, openInNewTab } from "./files.ts";
 import { HandoutPane } from "./HandoutPane.tsx";
 import { useHostSocket } from "./host-socket.ts";
 import { RoundView, StatusLabel } from "./RoundView.tsx";
@@ -100,6 +100,12 @@ export function PrepPage() {
     const { file, revisions } = exportPackages(competition, rounds, template, EDITOR_VERSION, new Date());
     download(file.fileName, file.content, file.type);
     for (const { id, revision } of revisions) dispatch({ type: "change-round", id, change: recordRevision(revision) });
+  };
+
+  // Nothing is recorded: the Round's Revisions and status stay as they were.
+  const tryRound = (round: Round) => {
+    if (typeof template !== "string") return;
+    openInNewTab(tryPackage(competition, round, template, EDITOR_VERSION, new Date()));
   };
 
   const saveFile = () => download(competitionFileName(competition), competitionFile(competition), "application/json");
@@ -238,6 +244,7 @@ export function PrepPage() {
             stageCopyProblem={connection.stageCopyProblem(round.id)}
             onChange={(change) => dispatch({ type: "change-round", id: round.id, change })}
             onExport={() => exportRounds([round])}
+            onTry={() => tryRound(round)}
           />
         ) : pane.kind === "handout" ? (
           <HandoutPane competition={competition} />

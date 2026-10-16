@@ -64,6 +64,17 @@ export function download(fileName: string, content: string | Uint8Array<ArrayBuf
   setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
 }
 
+/**
+ * Opens the HTML in a new tab, from a blob: URL on this page's origin. Called straight from a
+ * click, with nothing awaited first, or a popup blocker stops the tab.
+ */
+export function openInNewTab(html: string): void {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  window.open(url, "_blank");
+  // As for a download: the new tab may still be loading it.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /** The colour of one pixel of an image, as `#RRGGBB`. */
 export function pixelColour(image: HTMLImageElement, x: number, y: number): string {
   const canvas = document.createElement("canvas");

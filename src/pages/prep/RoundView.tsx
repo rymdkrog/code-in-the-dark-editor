@@ -29,9 +29,11 @@ interface Props {
   stageCopyProblem: string | null;
   onChange(change: (round: Round) => Round): void;
   onExport(): void;
+  /** Opens the Round in a new tab as a Contestant would see it, recording nothing. */
+  onTry(): void;
 }
 
-export function RoundView({ competition, round, templateSize, stageCopyProblem, onChange, onExport }: Props) {
+export function RoundView({ competition, round, templateSize, stageCopyProblem, onChange, onExport, onTry }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<string[]>([]);
   const [importNotices, setImportNotices] = useState<string[]>([]);
@@ -39,6 +41,7 @@ export function RoundView({ competition, round, templateSize, stageCopyProblem, 
   const status = roundStatus(competition, round);
   const oversized = (round.reference ? [round.reference, ...round.assets] : round.assets).filter(isOversized);
   const packageSize = templateSize === null ? null : estimatedPackageBytes(competition, round, templateSize);
+  const tryNote = useId();
 
   const setReference = async (file: File | undefined) => {
     if (!file) return;
@@ -117,6 +120,14 @@ export function RoundView({ competition, round, templateSize, stageCopyProblem, 
           {packageSize !== null && ` · ≈ ${formatBytes(packageSize)}`}
         </span>
         <StatusLabel status={status} />
+        <span className="try">
+          <button className="small-button" onClick={onTry} disabled={!round.reference || templateSize === null} aria-describedby={tryNote}>
+            Try
+          </button>
+          <span id={tryNote} className="dim">
+            in this browser, not the check on a Contestant's laptop
+          </span>
+        </span>
         <button className="go" onClick={onExport} disabled={status.kind === "problem" || templateSize === null}>
           {round.revisions.length ? "Re-export" : "Export"}
         </button>

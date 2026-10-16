@@ -41,3 +41,20 @@ export function exportPackages(
   const content = zip(packages.map(({ name, html }) => ({ name, data: encoder.encode(html), modified: now })));
   return { file: { fileName: packagesZipFileName(competition), content, type: "application/zip" }, revisions };
 }
+
+/**
+ * The package Try opens: what exporting the Round now would give, but with no Audience connection,
+ * so it opens no socket and lands on no Roster. It carries the stamp the next Revision would get,
+ * recorded nowhere.
+ */
+export function tryPackage(
+  competition: Competition,
+  round: Round,
+  template: string,
+  editorVersion: string,
+  now: Date,
+): string {
+  const data = roundData(competition, round, nextRevision(competition, round, now), editorVersion);
+  delete data.audience;
+  return fillTemplate(template, data);
+}

@@ -78,6 +78,8 @@ main { min-width: 0; padding-bottom: 40px; }
 .topbar .round-name { background: none; border: 0; font-size: 22px; font-weight: 800; width: 170px; }
 .topbar .file { color: var(--dim); }
 .topbar .go { margin-left: auto; }
+.topbar .try { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.topbar .try ~ .go { margin-left: 0; }
 .chip { font-size: 12px; background: #ffffff14; border-radius: 999px; padding: 2px 9px; }
 .status { font-size: 12px; justify-self: start; border-radius: 999px; padding: 1px 8px; background: #ffffff14; color: var(--dim); }
 .status.problem { background: #ff8a8022; color: var(--problem); }
