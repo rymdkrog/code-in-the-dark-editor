@@ -5,11 +5,16 @@ import { expect, test } from "@playwright/test";
 import { stageLink } from "../../src/pages/links.ts";
 import { claimConsole, desk, heatPackage, laptop, newClaim } from "./host.ts";
 import { WORKER_URL } from "./worker.ts";
+import { closeOwnContexts, ownContext } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 test("after a rehearsal Round with a laptop and a Vote, a reset empties the Roster and tally, the Stage shows the welcome screen, and an open laptop comes back", async ({
   browser,
   page: host,
 }, testInfo) => {
+  // Five pages and a whole rehearsal: in CI's WebKit each step takes about a second.
+  test.slow();
   const claim = newClaim();
   await claimConsole(host, claim);
   const { rail, button, dialog } = desk(host);
@@ -22,7 +27,7 @@ test("after a rehearsal Round with a laptop and a Vote, a reset empties the Rost
   await button("End early").click();
   await dialog.getByRole("button", { name: "End now" }).click();
   await button("Open voting").click();
-  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  const phone = await (await ownContext(browser, { viewport: { width: 390, height: 844 } })).newPage();
   await phone.goto(`${WORKER_URL}/join?c=${claim.joinCode}`);
   await phone.getByRole("list", { name: "Roster" }).getByRole("button", { name: "Ada" }).click();
   await expect(host.getByLabel("Turnout")).toHaveText("1 vote");

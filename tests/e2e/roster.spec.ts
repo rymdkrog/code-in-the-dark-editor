@@ -4,6 +4,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { claimConsole, heatPackage, laptop, newClaim } from "./host.ts";
 import { enterName } from "./package.ts";
+import { closeOwnContexts } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 const rosterOf = (host: Page) => host.getByRole("table", { name: /^Roster/ });
 const row = (host: Page, name: string) => rosterOf(host).getByRole("row").filter({ hasText: name });

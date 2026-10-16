@@ -7,6 +7,9 @@ import { pathToFileURL } from "node:url";
 import { presences, startFakeWorker } from "./fake-worker.ts";
 import { gateNetwork } from "./no-network-gate.ts";
 import { editorText, enterName, makePackage, openPackage, PRACTICE, roundIn } from "./package.ts";
+import { closeOwnContexts, ownContext } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 const JOIN_CODE = "K7XQ2N";
 const TOKEN = "contestant-token-for-the-presence-tests";
@@ -19,7 +22,7 @@ const audiencePackage = (testInfo: TestInfo, workerUrl: string) =>
 
 /** An online context behind the gate, which lets only `workerUrl`'s sockets through. */
 async function online(browser: Browser, workerUrl?: string) {
-  const context = await browser.newContext();
+  const context = await ownContext(browser);
   const check = await gateNetwork(context, { workerUrl, online: true });
   return { context, page: await context.newPage(), check };
 }

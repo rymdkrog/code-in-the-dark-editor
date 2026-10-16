@@ -6,6 +6,9 @@ import { stageLink } from "../../src/pages/links.ts";
 import type { Claim } from "../../src/protocol/protocol.ts";
 import { claimConsole, desk, newClaim } from "./host.ts";
 import { WORKER_URL } from "./worker.ts";
+import { closeOwnContexts, ownContext } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 /** Heat 1 at voting, with Ada, Bo and Cleo added by hand. */
 async function votingOpen(host: Page): Promise<Claim> {
@@ -27,7 +30,7 @@ async function votingOpen(host: Page): Promise<Claim> {
 
 /** A phone of its own, so its own voter id, on the Competition. */
 async function phone(browser: Browser, claim: Claim) {
-  const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  const page = await (await ownContext(browser, { viewport: { width: 390, height: 844 } })).newPage();
   await page.goto(`${WORKER_URL}/join?c=${claim.joinCode}`);
   return page;
 }

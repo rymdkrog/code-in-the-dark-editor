@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { decodeClaim } from "../../src/protocol/protocol.ts";
 import { downloadFrom, exportRound, newRound, openAudiencePane, openPackage, REFERENCE, turnOnAudience } from "./prep.ts";
+import { closeOwnContexts } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 const WORKER = "https://citd.example.workers.dev";
 

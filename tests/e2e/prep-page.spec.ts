@@ -3,6 +3,9 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } fro
 import { join } from "node:path";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import { downloadFrom, exportRound, fixture, newRound, openPackage, REFERENCE } from "./prep.ts";
+import { closeOwnContexts } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 const pngDataUri = (path: string) => `data:image/png;base64,${readFileSync(path).toString("base64")}`;
 

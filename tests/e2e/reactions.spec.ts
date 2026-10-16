@@ -7,12 +7,14 @@ import { startFakeWorker, type FakeWorker, type Peer } from "./fake-worker.ts";
 import { gateNetwork } from "./no-network-gate.ts";
 import { editorText, makePackage, openPackage, reveal } from "./package.ts";
 import { laptopPeer, mostInAFrame, reaction, reactionRecording, recordReactions, type Blit } from "./reactions.ts";
+import { closeOwnContexts, ownContext } from "./contexts.ts";
 
 const WIDTH = 1440;
 const HEIGHT = 900;
 
 let worker: FakeWorker | null = null;
 test.afterEach(async () => {
+  await closeOwnContexts();
   await worker?.stop();
   worker = null;
 });
@@ -21,7 +23,7 @@ test.afterEach(async () => {
 async function contestant(browser: Browser, testInfo: TestInfo): Promise<{ page: Page; peer: Peer }> {
   const { behaviour, peer } = laptopPeer();
   worker = await startFakeWorker(behaviour);
-  const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT } });
+  const context = await ownContext(browser, { viewport: { width: WIDTH, height: HEIGHT } });
   await gateNetwork(context, { workerUrl: worker.url, online: true });
   const page = await context.newPage();
   await recordReactions(page);

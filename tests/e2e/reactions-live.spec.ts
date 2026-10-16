@@ -4,6 +4,9 @@
 import { expect, test } from "@playwright/test";
 import { claimConsole, desk, heatPackage, laptop, newClaim } from "./host.ts";
 import { WORKER_URL } from "./worker.ts";
+import { closeOwnContexts, ownContext } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 test("a phone taps 🔥 on Ada's row, and it floats up on Ada's screen only", async ({ browser, page: host }, testInfo) => {
   const claim = newClaim();
@@ -13,7 +16,7 @@ test("a phone taps 🔥 on Ada's row, and it floats up on Ada's screen only", as
   await desk(host).rail.getByRole("button", { name: /^Heat 1/ }).click();
   await desk(host).button("Start Round").click();
 
-  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  const phone = await (await ownContext(browser, { viewport: { width: 390, height: 844 } })).newPage();
   await phone.goto(`${WORKER_URL}/join?c=${claim.joinCode}`);
   const fire = phone.getByRole("button", { name: "React 🔥 to Ada" });
   await expect(fire).toBeEnabled({ timeout: 20_000 });

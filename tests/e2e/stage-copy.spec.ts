@@ -7,6 +7,9 @@ import { desk, hostLinkIn } from "./host.ts";
 import { newRound, REFERENCE, turnOnAudience } from "./prep.ts";
 import { V, type RoundRef } from "../../src/protocol/protocol.ts";
 import { WORKER_ORGANIZER_KEY, WORKER_URL } from "./worker.ts";
+import { closeOwnContexts, ownContext } from "./contexts.ts";
+
+test.afterEach(closeOwnContexts);
 
 /** Every frame a page's sockets send or receive, the sent ones marked. */
 function frames(page: Page) {
@@ -44,10 +47,10 @@ test("prep connected with a Reference set, voting opens, and a Stage in a fresh 
   const { rail, button, dialog } = desk(host);
   await rail.getByRole("button", { name: /^Heat 1/ }).click();
 
-  const stageContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const stageContext = await ownContext(browser, { viewport: { width: 1920, height: 1080 } });
   const stage = await stageContext.newPage();
   await stage.goto(stageLink);
-  const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phoneContext = await ownContext(browser, { viewport: { width: 390, height: 844 } });
   const phone = await phoneContext.newPage();
   const phoneFrames = frames(phone);
   await phone.goto(`${WORKER_URL}/join?c=${joinCode}`);

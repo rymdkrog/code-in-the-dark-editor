@@ -5,6 +5,7 @@ import { expect, type Browser, type Locator, type Page, type TestInfo } from "@p
 import type { RoundData } from "../../src/round-package/round-data.ts";
 import { gateNetwork } from "./no-network-gate.ts";
 import { roundIn } from "./package.ts";
+import { ownContext } from "./contexts.ts";
 
 export const fixture = (file: string) => fileURLToPath(new URL(`../../fixtures/practice/${file}`, import.meta.url));
 export const REFERENCE = fixture("reference.png");
@@ -25,7 +26,7 @@ export const exportRound = (page: Page, testInfo: TestInfo) =>
 
 /** Opens a Round package from file://, offline and behind the no-network gate. */
 export async function openPackage(browser: Browser, path: string) {
-  const context = await browser.newContext();
+  const context = await ownContext(browser);
   const check = await gateNetwork(context, { workerUrl: roundIn(path).audience?.workerUrl });
   const page = await context.newPage();
   await page.goto(pathToFileURL(path).href);

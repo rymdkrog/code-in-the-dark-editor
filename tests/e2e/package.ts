@@ -25,7 +25,17 @@ export async function openPackage(page: Page, file = PRACTICE) {
   await expect(started).toBeAttached();
   if (await page.getByRole("dialog").isVisible()) await enterName(page, "Anna");
   // The editor takes focus (back) by itself, so the Contestant can type straight away.
-  await expect(page.locator("#editor textarea")).toBeFocused();
+  await expect(page.locator("#editor textarea"))
+    .toBeFocused()
+    .catch(async (error: Error) => {
+      // Playwright's "inactive" means either the textarea lost focus or the page did: say which.
+      const focus = await page.evaluate(() => ({
+        documentHasFocus: document.hasFocus(),
+        activeElement: document.activeElement?.outerHTML.slice(0, 100),
+      }));
+      error.message += `\nFocus then: ${JSON.stringify(focus)}`;
+      throw error;
+    });
 }
 
 export async function enterName(page: Page, name: string) {

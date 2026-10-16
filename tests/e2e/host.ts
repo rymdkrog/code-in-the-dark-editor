@@ -10,6 +10,7 @@ import { makePackage } from "../round-packages.ts";
 import { enterName } from "./package.ts";
 import { newRound, turnOnAudience } from "./prep.ts";
 import { WORKER_ORGANIZER_KEY, WORKER_URL } from "./worker.ts";
+import { ownContext } from "./contexts.ts";
 
 /** Prepares a Competition with Heat 1 and a Final on the local Worker, and returns what the
  * prep page's Audience pane hands out. */
@@ -57,7 +58,7 @@ export const heatPackage = (testInfo: TestInfo, claim: Claim, n: number) =>
 
 /** Opens a Round package on a laptop of its own, online to the local Worker only. */
 export async function laptop(browser: Browser, file: string, name: string) {
-  const context = await browser.newContext();
+  const context = await ownContext(browser);
   const check = await gateNetwork(context, { workerUrl: WORKER_URL, online: true });
   const page = await context.newPage();
   await page.goto(pathToFileURL(file).href);
